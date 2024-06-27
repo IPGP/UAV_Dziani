@@ -82,6 +82,7 @@ class DzianiBullage:
                 CSV_DATA = csv.DictReader(fichier)
         # parametres en ligne
         elif self.google_sheet_id:
+            print(f'google_sheet_id {self.google_sheet_id}')
             url = f'https://docs.google.com/spreadsheets/d/{self.google_sheet_id}/export?format=csv'
             response = requests.get(url)
             if response.status_code == 200:
