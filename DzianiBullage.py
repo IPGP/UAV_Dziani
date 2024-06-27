@@ -366,21 +366,10 @@ class DzianiBullage:
             plt.show()
 
     def frame_to_grey_RGB(self,frame):
-        #avant_time = time.time()
-        out = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        #apres_time = time.time()
-        #print('##############################################################################')
-        #print(f'duree  grey {apres_time-avant_time}')
-        return out
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     def frame_to_grey_sum(self,frame):
-        #avant_time = time.time()
-        out = (frame[:,:,0]+frame[:,:,1]+frame[:,:,2]).astype(np.uint8)
-        #apres_time = time.time()
-        #print('##############################################################################')
-        #print(f'duree  grey {apres_time-avant_time}')
-        return out
-        #return (frame[:,:,0]+frame[:,:,1]+frame[:,:,2]).astype(np.uint8)
+        return (frame[:,:,0]+frame[:,:,1]+frame[:,:,2]).astype(np.uint8)
 
 
     def calculer_vitesse_bulles(self, debut_enchantillonnage ):
@@ -775,7 +764,6 @@ class DzianiBullage:
 
         print('lecture des fichiers JSON')
 
-
         # Parcourir tous les fichiers dans le dossier
         for filename in os.listdir(self.output_path):
             # Vérifier si le fichier est un fichier JSON
@@ -827,11 +815,6 @@ class DzianiBullage:
 
 def main():
 
-    # Load secrets from .env
-    load_dotenv()
-
-    #csv_input_parameters_file = 'parametres.csv'
-    google_sheet_id = os.getenv("GG_SHEET_ID")
 
     start_time = time.time()
     now = datetime.datetime.now()
@@ -846,7 +829,6 @@ def main():
     # Where are the data relative to this script
     root_data_path='./'
 
-
     numeros_des_lignes_a_traiter = [11]
 
     duree_fenetre_analyse_seconde = 20
@@ -857,6 +839,18 @@ def main():
                                        root_data_path=root_data_path,duree_analyse=duree_fenetre_analyse_seconde,
                                        DPI_SAVED_IMAGES=120)
         if part == 1:
+
+            # Get parameters from a shared google sheet
+            # Load secrets from .env
+            load_dotenv()
+            #csv_input_parameters_file = 'parametres.csv'
+            google_sheet_id = os.getenv("GG_SHEET_ID")
+            if google_sheet_id is None:
+                print('Id of google sheet is required to process data')
+                print('in the .env file')
+                print('ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF')
+
+
             # nb of CPU to use
             cpu_nb = cpu_count()
             print("Working on the video file ")
