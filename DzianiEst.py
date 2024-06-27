@@ -1,0 +1,890 @@
+# -*- coding: utf-8 -*-
+import copy
+import os
+import sys
+import datetime
+import csv
+import time
+import json
+import requests
+from multiprocessing import Pool,cpu_count
+from dataclasses import dataclass, field
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import patches
+from scipy.interpolate import griddata
+from dotenv import load_dotenv
+
+
+@dataclass
+class DzianiBullage:
+
+    csv_file : str = None
+    google_sheet_id: str = None
+    numero_ligne : int = 0
+
+    #Video
+    video_path : str = ""
+    date_video : str = ""
+    frames_par_second : int = 0
+    total_frames : int = 0
+    # duration en secondes
+    duration : float = 0
+
+    ## Analyse
+    gsd_hauteur : float = 0
+    diametre_detection : int = 0
+    diametre_interpolation: int = 0
+    centre_zone_de_detection : tuple  = None
+    centre_interpolation: tuple = None
+    colormap =  plt.cm.rainbow
+    nom_fichier_video : str = ""
+    output_path : str = ""
+    root_data_path : str = "./"
+
+
+    CELL_SIZE: int =  500
+    NB_BULLES: int = 3000
+
+    # dpi des images:
+    DPI_SAVED_IMAGES: int = None
+
+    duree_analyse : int = 20 # en seconde
+    decalage_fenetre: int = 5 #en seconde
+
+    ##### Si DISPLAY_PLOTS est vrai, le graphique est affiché à l'écran
+    DISPLAY_PLOTS: bool = False
+
+    ##### Si SAVE_PLOTS est vrai, le graphique est sauvegardé dans le répertoire spécifié
+    SAVE_PLOTS: bool = True
+
+
+    VITESSE_MIN_CLASSES_VITESSES : float = 0.1  # m/s
+    VITESSE_MAX_CLASSES_VITESSES : float = 0.4 # m/s
+
+    BORNE_INF_GRAPH : float = 0.25
+    BORNE_SUP_GRAPH : float = 0.33
+
+
+    # Liste pour stocker les résultats
+    results: list  = field(default_factory=list)
+    results_array: list  = field(default_factory=list)
+
+    def __post_init__(self):
+        """
+        import des parametres par lecture d'un fichier csv
+        les parametres seront dans la classe
+        """
+        # Parametres depuis CSV
+        if self.csv_file:
+            with open(self.csv_file, mode='r', newline='', encoding='utf-8') as fichier:
+                CSV_DATA = csv.DictReader(fichier)
+        # parametres en ligne
+        elif self.google_sheet_id:
+            url = f'https://docs.google.com/spreadsheets/d/{self.google_sheet_id}/export?format=csv'
+            response = requests.get(url)
+            if response.status_code == 200:
+                decoded_content = response.content.decode('utf-8')
+                CSV_DATA = csv.DictReader(decoded_content.splitlines(), delimiter=',')
+
+
+            # Vérifier que les colonnes nécessaires sont présentes
+                # Définir les nouvelles colonnes requises
+            colonnes_requises = ['VIDEO_PATH','numero','VITESSE_MAX_CLASSES_VITESSES',
+                'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
+                'DIAMETRE_INTERPOLATION', 'aire_detection_m2',
+                'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
+                'CENTRE_INTERPOLATION']
+
+            for colonne in colonnes_requises:
+                if colonne not in CSV_DATA.fieldnames:
+                    raise ValueError(f"La colonne requise '{colonne}' est manquante dans le fichier CSV.")
+
+        # Lire les données jusqu'à la ligne spécifique
+                for index, ligne in enumerate(CSV_DATA):
+                    if index == self.numero_ligne:
+                        donnees = ligne
+        self.video_path = self.root_data_path+donnees['VIDEO_PATH']
+        self.date_video = donnees['DATE_VIDEO']
+        self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
+        self.diametre_detection = int(donnees['DIAMETRE_DETECTION'])
+        self.diametre_interpolation = int(donnees['DIAMETRE_INTERPOLATION'])
+        self.centre_zone_de_detection = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
+        self.centre_interpolation = eval(donnees['CENTRE_INTERPOLATION'])
+        self.VITESSE_MAX_CLASSES_VITESSES = float(donnees['VITESSE_MAX_CLASSES_VITESSES'])
+
+
+
+
+        aire_pixels_detection= np.pi * ((self.diametre_detection / 2) ** 2)
+        aire_metres_detection = aire_pixels_detection * (self.gsd_hauteur ** 2)
+
+        # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
+        self.PARAMETRES_DETECTION = dict(maxCorners=self.NB_BULLES, qualityLevel=0.1, minDistance=0.5, blockSize=10)
+        self.PARAMETRES_SUIVI = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+
+
+        self.nom_fichier_video = os.path.basename(self.video_path)
+        self.output_path = f'{self.numero_ligne}_resultats_{self.duree_analyse}s_{self.decalage_fenetre}s_{self.date_video}_{self.nom_fichier_video}'
+        self.tag_file=f'_{self.numero_ligne}_{self.duree_analyse}s_{self.decalage_fenetre}s_{self.date_video}_{self.nom_fichier_video}'
+        self.results_csv_filepath = os.path.join(self.output_path, f'results{self.tag_file}.csv')
+        self.results_npy_filepath = os.path.join(self.output_path, f'results{self.tag_file}.npy')
+
+        print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
+              f'{self.diametre_detection=}\n{self.diametre_interpolation=}\n'
+              f'{self.centre_zone_de_detection=}\n{self.centre_interpolation=}\n'
+              f'{self.VITESSE_MAX_CLASSES_VITESSES=}\n{self.output_path}'
+              )
+
+        self.nom_fichier_video = os.path.basename(self.video_path)
+        # Nom des fichiers de sorties et répertoires
+        if not os.path.exists(self.output_path):
+            os.makedirs(self.output_path)
+
+        # Get data from video file
+        self.get_video_data()
+
+
+
+        print(f"L'aire de la zone de detection est de {aire_pixels_detection:.2f} pixels")
+        print(f"L'aire de la zone de detection est de {aire_metres_detection:.2f} m²")
+
+
+
+    def color_and_class_classification_for_speed(self,speed:float) -> tuple[tuple, str]:
+        """
+        Pour une vitesse speed,
+        Retourne un tuple (couleur class, str de la classe de classe)
+        speed_class : classe de vitesse ('low', 'medium' ou 'high')
+        """
+        if speed < self.BORNE_INF_GRAPH:
+            return ((0, 255, 255),'low')  # Basse vitesse
+
+        if speed < self.BORNE_SUP_GRAPH:
+            return ((0, 165, 255),'medium')  # Vitesse moyenne
+
+        return ((0, 0, 255),'high')  # Haute vitesse
+
+
+
+    def speed_to_color(self,speed):
+        """
+        Convertit une vitesse en une couleur sur une échelle de couleurs
+        speed : vitesse à convertir
+        """
+
+        norm = plt.Normalize(self.VITESSE_MIN_CLASSES_VITESSES, self.VITESSE_MAX_CLASSES_VITESSES,clip=True)
+    #    norm = plt.Normalize(self.VITESSE_MIN_CLASSES_VITESSES, self.VITESSE_MAX_CLASSES_VITESSES,clip=False)
+
+        color = self.colormap(norm(speed))
+        return tuple(int(c * 255) for c in color[2::-1])
+
+
+
+
+    def draw_color_scale(self,frame,  position_echelle_couleur, hauteur_echelle_couleur, largeur_echelle_couleur):
+        """
+        Dessine une échelle de couleurs représentant une gamme de vitesses sur une image
+        position_echelle_couleur : position (x, y) de l'échelle sur l'image
+        """
+        hauteur_echelle_couleur *= 2  # Double la hauteur pour grossir l'échelle
+        position_echelle_couleur = (position_echelle_couleur[0], position_echelle_couleur[1] + 100)  # Descend l'échelle de 100 pixels
+
+        for i in range(hauteur_echelle_couleur):
+            # Inverser l'échelle de vitesse
+            speed = self.VITESSE_MAX_CLASSES_VITESSES - (self.VITESSE_MAX_CLASSES_VITESSES - self.VITESSE_MIN_CLASSES_VITESSES) * (i / hauteur_echelle_couleur)
+            color = self.speed_to_color(speed)
+            cv2.line(frame, (position_echelle_couleur[0], position_echelle_couleur[1] + i), (position_echelle_couleur[0] + largeur_echelle_couleur, position_echelle_couleur[1] + i), color, 1)
+
+        # Ajouter des annotations pour la vitesse minimale et maximale
+        cv2.putText(frame, f'{self.VITESSE_MIN_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 10, position_echelle_couleur[1] + hauteur_echelle_couleur), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
+        cv2.putText(frame, f'{self.VITESSE_MAX_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 5, position_echelle_couleur[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
+
+
+
+    def calculate_speed(self,point1, point2):
+        """
+        Calcule la vitesse entre deux points sur une image en fonction du FPS (frames per second)
+        frames_par_second : nombre de frames par seconde de la vidéo
+        """
+        # Calculer la distance euclidienne entre les deux points
+        distance = np.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
+        # Le temps entre les frames est l'inverse du FPS
+        time_interval = 1 / self.frames_par_second
+        # La vitesse est distance par temps (pixels par seconde dans ce cas)
+        return distance / time_interval
+
+
+
+    def calculate_moving_average(self,speed_list, window_size):
+        """
+        Calcule la moyenne mobile d'une liste de vitesses
+        - speed_list : liste des vitesses
+        - window_size : taille de la fenêtre pour la moyenne mobile
+        - return quoi ?
+        """
+        cumsum = np.cumsum(np.insert(speed_list, 0, 0))
+        return (cumsum[window_size:] - cumsum[:-window_size]) / float(window_size)
+
+
+
+    def draw_legend(self,img):
+        """
+        Dessine une légende sur une image indiquant les classes de vitesse et leurs couleurs respectives
+        """
+        # Définition des couleurs
+        colors = {
+            f'Vitesses faibles (< {self.BORNE_INF_GRAPH:.2f} m/s)': (0, 255, 255),  # Jaune
+            f'Vitesses moyennes(>={self.BORNE_INF_GRAPH:.2f} - <{self.BORNE_SUP_GRAPH:.2f} m/s)': (0, 165, 255),  # Orange
+            f'Vitesses elevees(>= {self.BORNE_SUP_GRAPH:.2f} m/s)': (0, 0, 255)  # Rouge
+        }
+        # Position de départ pour dessiner la légende
+        position_y_debut = 50  # Ajuster selon l'espace disponible en haut de l'image
+
+        # Parcourir chaque couleur dans le dictionnaire pour créer la légende
+        for (label, color) in colors.items():
+            # Dessiner le rectangle de la couleur
+            cv2.rectangle(img, (50, position_y_debut), (200, position_y_debut + 100), color, -1)
+            # Ajouter le texte descriptif
+            cv2.putText(img, label, (210, position_y_debut + 65), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 0), 3, cv2.LINE_AA)
+
+            # Incrémenter le y pour le prochain élément de légende, avec plus d'espace
+            position_y_debut += 120
+
+
+    def tracer_vitesse_vs_temps(self,numero_bulles_triees,speed_matrix , time_steps,debut_enchantillonnage):
+
+        fig, ax = plt.subplots()
+        normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)  # Normalisation des données de vitesse pour l'échelle de couleur
+
+        color_mesh = ax.pcolormesh(time_steps, np.arange(len(numero_bulles_triees)), speed_matrix, cmap=self.colormap, norm=normalisation, shading='auto')
+        color_bar_echelle = plt.colorbar(color_mesh, ax=ax)  # Ajout d'une barre de couleurs à l'échelle
+        color_bar_echelle.set_label('Speed (m/s)')  # Étiquette de la barre de couleurs
+
+        plt.xlim(0, self.duree_analyse)
+
+        ax.set_xlabel('Time (seconds)')
+        ax.set_ylabel('Points suivis par l\'algorithme')
+        ax.set_title(f'Evolution des vitesses au cours du temps \nDate de la vidéo: {self.date_video} {self.nom_fichier_video} {self.duree_analyse}s {self.decalage_fenetre}s')
+
+        #ax.text(1.7, 1.02, f'Date de la vidéo: {self.date_video}', transform=ax.transAxes, horizontalalignment='right', fontsize=10, color='black')
+
+        if self.SAVE_PLOTS :
+            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.numero_ligne}_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filepath = os.path.join(self.output_path, filename)
+            fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
+
+        if self.DISPLAY_PLOTS:
+            plt.show()
+
+
+
+    def tracer_carte_vitesses_interpolees(self,frame, masked_speeds, debut_enchantillonnage):
+
+        """
+        Trace une carte des vitesses interpolées avec une échelle de couleurs
+        """
+        # Calcul de l'aire d'un pixel en mètres carrés
+        dimension_pixel_grille_m2 = (self.gsd_hauteur * 100) ** 2
+
+        # Dimensions de l'image pour l'affichage
+        largeur_pixel_carte_interpolee = frame.shape[1] // 100
+        hauteur_pixel_carte_interpolee = frame.shape[0] // 100
+
+        # Création de la figure et affichage des vitesses interpolées
+        plt.figure(figsize=(10, 10))
+        normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)
+        plt.imshow(masked_speeds.T, extent=(0, largeur_pixel_carte_interpolee, hauteur_pixel_carte_interpolee, 0), origin='upper', cmap=self.colormap, norm=normalisation)
+        echelle_color_bar = plt.colorbar()
+        echelle_color_bar.set_label('Vitesse (m/s)')
+        plt.title(f"Carte des vitesses interpolées\n{self.date_video} {self.nom_fichier_video} {self.duree_analyse}s {self.decalage_fenetre}s")
+
+
+        # Ajout de l'échelle sur le graphique
+        position_x_pixel_legende = 30
+        position_y_pixel_legende = 18  # Positionner le carré plus bas
+        taille_pixel_legende = 1  #avec dans l'échelle de la carte interpolée
+
+        # Ajouter un carré représentant un pixel
+        pixel_legende = patches.Rectangle((position_x_pixel_legende, position_y_pixel_legende),
+                                        taille_pixel_legende, taille_pixel_legende, linewidth=0, edgecolor='white', facecolor='red')
+        plt.gca().add_patch(pixel_legende)
+
+        # Ajout de l'échelle sur le graphique
+        legend_text = f"{dimension_pixel_grille_m2:.2f} m²"
+        plt.text(position_x_pixel_legende + 0.02, position_y_pixel_legende - 0.02 * hauteur_pixel_carte_interpolee,
+                legend_text, color='black', fontsize=8, fontweight='bold')
+
+
+        if self.SAVE_PLOTS :
+            filename = f'Carte_des_vitesses_interpolees_{self.numero_ligne}_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filepath = os.path.join(self.output_path, filename)
+            plt.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
+
+        if self.DISPLAY_PLOTS:
+            plt.show()
+
+
+
+    def tracer_carte_vitesses_integrees_video_totale(self,nouvel_array_moyenne_high_res):
+        # Créer une nouvelle figure avec une instance de Figure et Axes
+
+        fig, ax = plt.subplots(figsize=(12, 9))
+    #    colormap = plt.get_cmap('Reds') #  Choix de la carte de couleurs
+    #    colormap.set_bad(color='white')  # Définir la couleur pour les valeurs NaN à blanc
+
+        normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)
+        im = ax.imshow(nouvel_array_moyenne_high_res, cmap=self.colormap, interpolation='bilinear',norm=normalisation)
+        ax.set_title(f"Carte des vitesses moyennes intégrées \n{self.date_video} {self.nom_fichier_video} {self.duree_analyse}s {self.decalage_fenetre}s", fontsize=12)
+
+        #Ajout d'une échelle pour l'illustration
+        largeur_pixel_carte_interpolee, hauteur_pixel_carte_interpolee = nouvel_array_moyenne_high_res.shape[1], nouvel_array_moyenne_high_res.shape[0]
+        # Calcul de l'aire d'un pixel en mètres carrés
+        dimension_pixel_grille_m2 = (self.gsd_hauteur * 100) ** 2
+
+        # Ajout de l'échelle sur le graphique
+        position_x_pixel_legende, position_y_pixel_legende = largeur_pixel_carte_interpolee * 0.85, hauteur_pixel_carte_interpolee * 0.75
+        pixel_size_display = 1
+        pixel_legende = patches.Rectangle((position_x_pixel_legende, position_y_pixel_legende), pixel_size_display, pixel_size_display, linewidth=1, edgecolor='red', facecolor='red')
+        ax.add_patch(pixel_legende)
+        ax.text(position_x_pixel_legende - 2, position_y_pixel_legende - 1, f"{dimension_pixel_grille_m2:.2f} m²", color='black', fontsize=10, fontweight='bold')
+        # Ajouter une barre de couleur
+        echelle_color_bar=fig.colorbar(im)
+        echelle_color_bar.set_label('Vitesse (m/s)')
+
+        if self.SAVE_PLOTS :
+            # Chemin et nom du fichier pour sauvegarder
+            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.numero_ligne}_{self.date_video}_final.png'
+            filepath = os.path.join(self.output_path, filename)
+            fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)  # Sauvegarde de la figure
+
+        # Afficher le graphique
+        if self.DISPLAY_PLOTS :
+            plt.show()
+
+    def frame_to_grey_RGB(self,frame):
+        #avant_time = time.time()
+        out = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        #apres_time = time.time()
+        #print('##############################################################################')
+        #print(f'duree  grey {apres_time-avant_time}')
+        return out
+
+    def frame_to_grey_sum(self,frame):
+        #avant_time = time.time()
+        out = (frame[:,:,0]+frame[:,:,1]+frame[:,:,2]).astype(np.uint8)
+        #apres_time = time.time()
+        #print('##############################################################################')
+        #print(f'duree  grey {apres_time-avant_time}')
+        return out
+        #return (frame[:,:,0]+frame[:,:,1]+frame[:,:,2]).astype(np.uint8)
+
+
+    def calculer_vitesse_bulles(self, debut_enchantillonnage ):
+
+        """
+        Calcule et retourne la vitesse des bulles dans une vidéo en utilisant des méthodes de détection de caractéristiques
+        et de suivi optique
+
+        Return:
+        vitesses_m_per_sec (dict): Dictionnaire des vitesses calculées pour chaque bulle en mètres par seconde
+        """
+
+        video_file = cv2.VideoCapture(self.video_path)
+        if not video_file.isOpened():
+            print(f"Erreur lors de l'ouverture de la vidéo {self.video_path}")
+            sys.exit()
+
+        total_frames = int(self.duree_analyse * self.frames_par_second)
+
+        # Decalage du film pour se mettre au bon endroit pour les calculs
+        video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_par_second)
+
+        # A priori ces variables ne sont jamais utilisées
+        #nb_colonnes_grille = int(video_file.get(cv2.CAP_PROP_FRAME_WIDTH)) // CELL_SIZE
+        #nb_lignes_grille = int(video_file.get(cv2.CAP_PROP_FRAME_HEIGHT)) // CELL_SIZE
+        #grid_counter = np.zeros((nb_lignes_grille, nb_colonnes_grille), dtype=int)
+
+
+
+        # Lecture de la première frame et création du masque pour la zone de détection
+        frame_available, image_precedente = video_file.read()
+        if not frame_available:
+            print(f"Erreur de lecture de la première frame de {self.nom_fichier_video}")
+            video_file.release()
+            sys.exit()
+        # Copy de la frame pour autre usage
+        frame_repartition_positions_initiales=np.array(image_precedente)
+
+        # Masques pour les zones de détection
+        masque_detection = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)  # Crée un masque de la même taille que l'image, mais en niveaux de gris
+        # Dessine un cercle plein (rayon 500) sur le masque avec une valeur de 255 (blanc)
+        cv2.circle(masque_detection, self.centre_zone_de_detection, self.diametre_detection, 255, thickness=-1)
+        mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
+        cv2.circle(mask_interpolation, self.centre_interpolation, self.diametre_interpolation, 255, -1)
+
+
+        image_precedente_grise = self.frame_to_grey_RGB(image_precedente)
+        #image_precedente_grise = self.frame_to_grey_sum(image_precedente)
+
+        # Utilise le masque circulaire pour la détection des caractéristiques
+        positions_initiales = cv2.goodFeaturesToTrack(image_precedente_grise,mask=masque_detection, **self.PARAMETRES_DETECTION)
+        masque_suivi = np.zeros_like(image_precedente)
+
+
+        distances_totales = {}  # Distances totales parcourues par chaque point
+        total_times = {}  # Temps total de suivi pour chaque point
+        vitesses_m_per_sec = {}
+        all_points = []  # Liste pour stocker tous les points de trajectoire
+        speeds_m_per_sec = []
+
+        print(f'{self.nom_fichier_video} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.duree_analyse} secondes')
+
+       # Boucle de traitement pour chaque frame jusqu'à atteindre le nombre total de frames
+        for frame_count in range(total_frames):
+
+            #avant_read_frame = time.time()
+            frame_available, frame = video_file.read()
+            #apre_read_frame = time.time()
+            #print('##############################################################################')
+            #print(f'duree  read frame {apre_read_frame - avant_read_frame}')
+
+            if not frame_available:
+                break
+
+            #print(f'{debut_enchantillonnage:03} nb_frame {frame_count}/{total_frames}')
+            #cv2.circle(frame, self.centre_zone_de_detection, diametre_detection, couleur_zone_de_detection, 3)
+            #cv2.circle(frame, self.centre_interpolation, diametre_interpolation, couleur_zone_interpolation, 3)
+
+        #    Calcul du flux optique pour suivre les caractéristiques d'une frame à l'autre
+            frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(image_precedente_grise, frame_gray, positions_initiales, None, **self.PARAMETRES_SUIVI)
+
+            # Filtrer les bons points suivis dans la nouvelle frame
+            points_encore_suivis = positions_suivies[statuts == 1]
+            points_initiaux_encore_suivis = positions_initiales[statuts == 1]
+
+
+            image_precedente_grise = frame_gray.copy()
+            positions_initiales = points_encore_suivis.reshape(-1, 1, 2)
+
+            self.draw_color_scale(frame, (200, 300), 500, 50)
+
+            if len(masque_suivi.shape) == 2 or masque_suivi.shape[2] == 1:  # mask est en niveaux de gris
+                masque_suivi = cv2.cvtColor(masque_detection, cv2.COLOR_GRAY2BGR)
+
+
+            for i, (new, old) in enumerate(zip(points_encore_suivis, points_initiaux_encore_suivis)):
+                x_new_point, y_new_point = new.ravel()
+                x_old_point, y_old_point = old.ravel()
+                distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
+                speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
+                speed_m_per_sec = speed_px_per_sec * self.gsd_hauteur  # Convertit la vitesse en m/sec
+                #speed_m_per_sec = distance*self.frames_par_second*self.gsd_hauteur
+
+                all_points.append(new)  # Stocker le point
+                speeds_m_per_sec.append(speed_m_per_sec)
+                #print(f'{speed_m_per_sec=}')
+                rayon_cercle_largeur_ligne = 2
+
+                color = self.speed_to_color(speed_m_per_sec)
+                #cv2.line(masque_suivi, (int(x_newPoint), int(y_newPoint)), (int(x_oldPoint), int(y_oldPoint)), color, rayon_cercle_largeur_ligne)
+                cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
+                #cv2.circle(frame, (int(x_newPoint), int(y_newPoint)), rayon_cercle_largeur_ligne, color, -1)
+
+                if i not in vitesses_m_per_sec:
+                    vitesses_m_per_sec[i] = []
+                vitesses_m_per_sec[i].append(speed_m_per_sec)
+
+
+                # Initialisation s'ils n'existent pas déjà
+                if i not in distances_totales:
+                    distances_totales[i] = 0
+                    total_times[i] = 0
+
+                # Mise à jour des distances et des temps
+                distances_totales[i] += distance
+                total_times[i] += 1
+
+                #initial_positions = positions_initiales.copy()
+                initial_positions = np.array(positions_initiales)
+
+            cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+            cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+
+            current_time = frame_count / self.frames_par_second
+            time_text = f"Duree: {current_time:.2f}s / {self.duree_analyse:.2f}s"
+            cv2.putText(frame, time_text, (70, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+
+
+            img = cv2.add(frame, masque_suivi)
+            #cv2.imshow('frame', img)
+
+            # on sauve l'image et le JSON a la derniere frame
+            if frame_count == total_frames -1:
+
+                if self.SAVE_PLOTS :
+                    filename = f'Trajets_des_bulles_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+                    filepath = os.path.join(self.output_path, filename)
+                    cv2.imwrite(filepath, img)
+
+
+                data_to_save = {
+                'data_vitesses_m/s': vitesses_m_per_sec,
+                }
+                data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.numero_ligne}_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.json')
+
+                # Sauvegarde en JSON
+                with open(data_filepath, 'w') as json_file:
+                    json.dump(data_to_save, json_file)
+
+
+
+            if self.DISPLAY_PLOTS & cv2.waitKey(30) & 0xFF == ord('q'):
+                break
+
+            image_precedente_grise = frame_gray.copy()
+            positions_initiales = points_encore_suivis.reshape(-1, 1, 2)
+
+        video_file.release()
+
+        #print(f'Fin traitement video for offset {debut_enchantillonnage:03}')
+
+
+        vitesses_moyennes = {}
+        for i, speed_list_per_frame in vitesses_m_per_sec.items():
+            if len(speed_list_per_frame) >= self.frames_par_second:
+    #           print(f'{debut_enchantillonnage:03} speed_list {speed_list_per_frame}')
+                ma_speeds = self.calculate_moving_average(speed_list_per_frame, self.frames_par_second)
+                #ma_speeds[::X] prend un point tout les X points
+                vitesses_moyennes[i] = ma_speeds[::self.frames_par_second]  # Extraire une moyenne tous les fps frames
+    #          print(f'{debut_enchantillonnage:03} vitesses_moyennes[i] {i} {vitesses_moyennes[i]}')
+
+    #    for i, speeds in vitesses_moyennes.items():
+    #        print(f"Point {i}: Moyenne des vitesses sur chaque seconde = {speeds}")
+    #        print(f'type speed {type(speed)} ')
+        bubble_ids = list(vitesses_moyennes.keys())
+        #print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
+        #print(f'{debut_enchantillonnage:03} (len(speeds) for speeds in vitesses_moyennes.values() {(len(speeds) for speeds in vitesses_moyennes.values())}')
+        longest_length = max((len(speeds) for speeds in vitesses_moyennes.values()),default=-9999)
+
+        if  longest_length == -9999:
+            print('-------------------------------------------------------------------')
+            print(f'{debut_enchantillonnage:03} le nb de vitesse calculees dans vitesses_moyennes[0] est {len(vitesses_moyennes[0])}')
+            print(f'{debut_enchantillonnage:03} mais il en faudrait {self.duree_analyse}')
+            print(f'{debut_enchantillonnage:03} donc on sort')
+            return []
+
+        time_steps = np.linspace(0, (longest_length - 1) * 1, longest_length)
+        #time_steps = np.arange(total_frames) / fps
+
+
+
+
+        speed_matrix = np.full((len(bubble_ids), longest_length), np.nan)
+
+        vitesse_moyenne_totale = {bubble_id: np.mean(speeds) for bubble_id, speeds in vitesses_m_per_sec.items()}
+
+        #vitesses_globales_moyennes = [np.mean(speeds) for speeds in vitesses_m_per_sec.values() if len(speeds) > 0]
+
+
+        # # On recupere la premiere frame apres debut_enchantillonnage * frames_par_second
+        # video_file = cv2.VideoCapture(self.video_path)
+        # video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_par_second)
+        # frame_available, frame_repartition_positions_initiales = video_file.read()
+        # video_file.release()
+
+        positions_initiales = cv2.goodFeaturesToTrack(cv2.cvtColor(frame_repartition_positions_initiales, cv2.COLOR_BGR2GRAY), mask=masque_detection, **self.PARAMETRES_DETECTION)
+        if positions_initiales is not None:
+            initial_positions = positions_initiales.reshape(-1, 2)  # Reshape p0 pour enlever la dimension inutile
+
+            # Accéder aux vitesses moyennes depuis le dictionnaire
+            for position, index in zip(initial_positions, range(len(initial_positions))):
+                if index in vitesse_moyenne_totale:
+                    speed = vitesse_moyenne_totale[index]
+                    color,speed_class= self.color_and_class_classification_for_speed(speed)
+                    cv2.circle(frame_repartition_positions_initiales, (int(position[0]), int(position[1])), 5, color, -1)
+
+            self.draw_legend(frame_repartition_positions_initiales)
+
+            cv2.putText(frame_repartition_positions_initiales, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+
+            filename = f'Repartition_des_positions_initiales_des_points_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filepath = os.path.join(self.output_path, filename)
+            cv2.imwrite(filepath, frame_repartition_positions_initiales)
+
+                #cv2.imshow('Repartition des positions initailes des points', cv2.resize(first_frame, (960, 540)))
+                #cv2.waitKey(0)
+
+        # Trier les bulles par leur vitesse moyenne (croissante pour ce cas)
+        sorted_bubble_ids = sorted(vitesse_moyenne_totale, key=vitesse_moyenne_totale.get)
+
+
+        longest_length = max(len(speeds) for speeds in vitesses_m_per_sec.values())
+        speed_matrix = np.full((len(sorted_bubble_ids), longest_length), np.nan)
+        time_steps = np.linspace(0, (longest_length - 1) * 1, longest_length)
+
+
+        for idx, bubble_id in enumerate(sorted_bubble_ids):
+            speeds = vitesses_m_per_sec[bubble_id]
+            speed_matrix[idx, :len(speeds)] = speeds
+
+        # Convertir l'axe des temps en secondes (supposons 1 mesure par seconde ici)
+        time_steps = np.linspace(0, self.duree_analyse, total_frames)
+
+
+
+        # Graph plot VS speed
+        #print(f"{debut_enchantillonnage:03} tracer_vitesse_vs_temps @@")
+        #print(f"{debut_enchantillonnage:03} Shapes {sorted_bubble_ids} {speed_matrix} {time_steps}")
+        self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_enchantillonnage)
+
+
+        ### Calcul interpolation
+        #print(f"Calcul interpolation {debut_enchantillonnage:03}")
+
+        points = np.array(all_points)
+        speeds = np.array(speeds_m_per_sec)
+
+
+        # Définition de la grille pour l'interpolation
+        grid_x, grid_y = np.mgrid[0:frame.shape[1]:100, 0:frame.shape[0]:100]
+
+        # Interpolation des vitesses sur la grille
+        grid_z = griddata(points, speeds, (grid_x, grid_y), method='nearest')
+
+        masked_speeds = np.where(mask_interpolation[grid_y, grid_x], grid_z, np.nan)
+        nan_speed_mask = np.isnan(grid_z) & (mask_interpolation[grid_y, grid_x] == 255)
+
+        aire_pixels= np.pi * ((self.diametre_interpolation / 2) ** 2)
+        aire_metres = aire_pixels * (self.gsd_hauteur ** 2)
+
+        #print(f"L'aire de la zone d'interpolation est de {aire_pixels:.2f} pixels")
+        #print(f"L'aire de la zone d'interpolation est de {aire_metres:.2f} m²")
+
+        self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_enchantillonnage)
+
+
+        low_speed_mask = (grid_z < self.BORNE_INF_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
+        medium_speed_mask = ((grid_z >= self.BORNE_INF_GRAPH) & (grid_z < self.BORNE_SUP_GRAPH)) & (mask_interpolation[grid_y, grid_x] == 255)
+        high_speed_mask = (grid_z >= self.BORNE_SUP_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
+
+        # Calcul de l'aire en pixels pour chaque classe
+        low_speed_area_pixels = np.sum(low_speed_mask)
+        medium_speed_area_pixels = np.sum(medium_speed_mask)
+        high_speed_area_pixels = np.sum(high_speed_mask)
+
+        mask_active_pixels = np.sum(mask_interpolation[grid_y, grid_x] == 255)
+
+        # Conversion en mètres carrés en utilisant le GSD
+        low_speed_area_m2_grille = (low_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+        medium_speed_area_m2_grille = (medium_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+        high_speed_area_m2_grille = (high_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+
+        mask_area_m2 = (mask_active_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+
+        #print(f"Aire des faibles vitesses: {low_speed_area_m2_grille:.2f} m²")
+        #print(f"Aire des vitesses moyennes: {medium_speed_area_m2_grille:.2f} m²")
+        #print(f"Aire des hautes vitesses: {high_speed_area_m2_grille:.2f} m²")
+        #print(f"Aire du masque d'interpolation: {mask_area_m2:.2f} m²")
+
+
+        data_to_save = {
+        'grid_x': grid_x.tolist(),
+        'grid_y': grid_y.tolist(),
+        'grid_z': grid_z.tolist(),
+        'masked_speeds': masked_speeds.tolist()
+    }
+        data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.json')
+
+        # Sauvegarde en JSON
+        with open(data_filepath, 'w') as json_file:
+            json.dump(data_to_save, json_file)
+
+        #print(f"Les données interpolées ont été sauvegardées dans le fichier {data_filepath}")
+
+
+        #print(f'Fin calculer_vitesse_bulles for offset {debut_enchantillonnage:03}')
+
+
+        #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+        #self.results.append([ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille])
+        #print(self.results)
+        return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+
+    def get_video_data(self):
+
+        # Ouvrir la vidéo
+        video_file = cv2.VideoCapture(self.video_path)
+        if not video_file.isOpened():
+            print(f"Erreur: impossible d'ouvrir la vidéo {self.video_path}")
+            sys.exit()
+
+        # Obtenir le nombre total de frames
+        self.total_frames = int(video_file.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.frame_width = int(video_file.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_height = int(video_file.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # Obtenir le taux de frames par seconde (fps)
+        self.frames_par_second = round(video_file.get(cv2.CAP_PROP_FPS))
+        # Libérer les ressources
+        video_file.release()
+
+        # Calculer la durée en secondes
+        self.duration = round(self.total_frames / self.frames_par_second)
+        self.frame_time = 1 / self.frames_par_second  # Durée d'un frame en secondes
+
+    def save_results(self):
+        # Affichage des résultats pour vérification
+
+        print('Sauvegarde des resultats en Numpy')
+        # Convertir la liste des résultats en tableau NumPy
+        self.results_array = np.array(self.results)
+
+        # Sauvegarder le tableau NumPy dans un fichier
+        #np.save('results.npy', results_array)
+
+        with open(self.results_npy_filepath, 'wb') as f:
+            np.save(f, self.results_array)
+
+        print('Sauvegarde des resultats en CSV')
+        self.save_results_list_to_csv()
+
+    def save_results_list_to_csv(self):
+    #    __import__("IPython").embed()
+
+        header = ['Offset'] + ['low_speed_area_m2_grille'] + ['medium_speed_area_m2_grille']+ ['high_speed_area_m2_grille']
+        with open(self.results_csv_filepath, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(header)
+            writer.writerows(self.results)
+
+
+
+
+    def moyennage_part_2(self):
+        self.results_array = np.load(self.results_npy_filepath)
+
+        #Ajout carte des vitesses moyennes interpolées intégrée sur toute la vidéo
+
+        # Liste pour stocker les données des fichiers JSON
+        self.donnees_json = []
+
+        print('lecture des fichiers JSON')
+
+
+        # Parcourir tous les fichiers dans le dossier
+        for filename in os.listdir(self.output_path):
+            # Vérifier si le fichier est un fichier JSON
+            if filename.endswith('.json'):
+                # Construire le chemin complet vers le fichier JSON
+                filepath = os.path.join(self.output_path, filename)
+                #print(f'lecture du fichier JSON {filepath}')
+                # Ouvrir le fichier JSON en mode lecture
+                with open(filepath, 'r') as file:
+                    # Charger les données JSON
+                    data = json.load(file)
+                    # Vérifier si la clé 'masked_speeds' existe dans les données
+                    if 'masked_speeds' in data:
+                        # Ajouter les données au dictionnaire avec le nom du fichier comme clé
+                        self.donnees_json.append({filename[:-5]: data['masked_speeds']})
+
+        # Créer les variables à partir des données importées
+        for donnees in self.donnees_json:
+            nom_variable, data = list(donnees.items())[0]
+            globals()[nom_variable] = np.array(data)
+
+        # Vérifier les noms et les dimensions des variables créées
+        #print("Variables créées :", list(locals().keys()))
+        print("Variables créées :", list(globals().keys()))
+
+        # Créer une liste contenant tous les tableaux à additionner
+        #tous_les_tableaux = [valeur for nom, valeur in locals().items() if nom.startswith(f'donnees_interpolees_{self.date_video}')]
+        tous_les_tableaux = [valeur for nom, valeur in globals().items() if nom.startswith(f'donnees_interpolees_{self.date_video}')]
+
+        # Moyenner tous les tableaux à l'aide de np.mean()
+        nouvel_array_moyenne = np.mean(tous_les_tableaux, axis=0)
+
+        # Afficher le nouvel array additionné
+        #print("Nouvel array moyenné :\n", nouvel_array_moyenne)
+
+        # Additionner tous les tableaux à l'aide de np.sum()
+        #nouvel_array_addition = np.sum(tous_les_tableaux, axis=0)
+
+        # Afficher le nouvel array additionné
+        #print("Nouvel array additionné :\n", nouvel_array_addition)
+        # Créer une image moyenne
+        # Tripler la résolution de la grille
+        #new_shape = (nouvel_array_moyenne.shape[0] * 1, nouvel_array_moyenne.shape[1] * 3)
+        nouvel_array_moyenne_high_res = np.kron(nouvel_array_moyenne, np.ones((1, 1)))
+
+        print("Carte des vitesses moyennes intégrées")
+        self.tracer_carte_vitesses_integrees_video_totale(nouvel_array_moyenne_high_res)
+
+
+def main():
+
+    # Load secrets from .env
+    load_dotenv()
+
+    #csv_input_parameters_file = 'parametres.csv'
+    google_sheet_id = os.getenv("GG_SHEET_ID")
+
+    start_time = time.time()
+    now = datetime.datetime.now()
+    print('##############################################################################')
+    print(f'{now} Start')
+
+
+    # part = 1 for video treatment
+    # part = 2 for moyennage // interpolation
+    part = 1
+
+    # Where are the data relative to this script
+    root_data_path='./'
+
+
+    numeros_des_lignes_a_traiter = [11]
+
+    duree_fenetre_analyse_seconde = 20
+    #csv_input_parameters_file = 'parametres.csv'
+    #for numero_ligne in range(0,10) :
+    for numero_ligne in numeros_des_lignes_a_traiter :
+        dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,numero_ligne=numero_ligne,
+                                       root_data_path=root_data_path,duree_analyse=duree_fenetre_analyse_seconde,
+                                       DPI_SAVED_IMAGES=120)
+        if part == 1:
+            # nb of CPU to use
+            cpu_nb = cpu_count()
+            print("Working on the video file ")
+            array_arguments_for_calculer_vitesse_bulles =  list(range(0, dziani_bullage.duration - dziani_bullage.duree_analyse, dziani_bullage.decalage_fenetre))
+
+            with Pool(processes=cpu_nb) as pool:
+                # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
+                #  de la array_arguments_for_calculer_vitesse_bulles
+                results_local=pool.map(dziani_bullage.calculer_vitesse_bulles, array_arguments_for_calculer_vitesse_bulles)
+
+            dziani_bullage.results = results_local
+            # On sauve les resultats
+            dziani_bullage.save_results()
+
+            #print("Résultats:")
+            #print(dziani_bullage.results)
+
+            fin_traitement_video = time.time()
+            now_fin_traitement_video = datetime.datetime.now()
+            print(f'{now_fin_traitement_video} fin traitement_fichier video ')
+            print('##############################################################################')
+            print(f'duree  {fin_traitement_video - start_time}')
+            print("Working on the data ")
+
+            dziani_bullage.moyennage_part_2()
+
+        elif part == 2 :
+            print("Working on the data ")
+            dziani_bullage.moyennage_part_2()
+
+if __name__ == "__main__":
+    main()
