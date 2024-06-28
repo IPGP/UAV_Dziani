@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from matplotlib import patches
 from scipy.interpolate import griddata
 from dotenv import load_dotenv
+from icecream import ic
 
 
 @dataclass
@@ -34,10 +35,10 @@ class DzianiBullage:
 
     ## Analyse
     gsd_hauteur : float = 0
-    diametre_detection : int = 0
-    diametre_interpolation: int = 0
-    centre_zone_de_detection : tuple  = None
-    centre_interpolation: tuple = None
+    detection_diameter : int = 0
+    interpolation_diameter: int = 0
+    detection_center : tuple  = None
+    interpolation_center: tuple = None
     colormap =  plt.cm.rainbow
     nom_fichier_video : str = ""
     output_path : str = ""
@@ -92,7 +93,7 @@ class DzianiBullage:
 
             # Vérifier que les colonnes nécessaires sont présentes
                 # Définir les nouvelles colonnes requises
-            colonnes_requises = ['VIDEO_PATH','numero','VITESSE_MAX_CLASSES_VITESSES',
+            colonnes_requises = ['VIDEO_PATH','numero','commentaires', 'VITESSE_MAX_CLASSES_VITESSES',
                 'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
                 'DIAMETRE_INTERPOLATION', 'aire_detection_m2',
                 'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
@@ -109,16 +110,16 @@ class DzianiBullage:
         self.video_path = self.root_data_path+donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
         self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
-        self.diametre_detection = int(donnees['DIAMETRE_DETECTION'])
-        self.diametre_interpolation = int(donnees['DIAMETRE_INTERPOLATION'])
-        self.centre_zone_de_detection = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
-        self.centre_interpolation = eval(donnees['CENTRE_INTERPOLATION'])
+        self.detection_diameter = int(donnees['DIAMETRE_DETECTION'])
+        self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
+        self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
+        self.interpolation_center = eval(donnees['CENTRE_INTERPOLATION'])
         self.VITESSE_MAX_CLASSES_VITESSES = float(donnees['VITESSE_MAX_CLASSES_VITESSES'])
 
 
 
 
-        aire_pixels_detection= np.pi * ((self.diametre_detection / 2) ** 2)
+        aire_pixels_detection= np.pi * ((self.detection_diameter / 2) ** 2)
         aire_metres_detection = aire_pixels_detection * (self.gsd_hauteur ** 2)
 
         # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
@@ -134,8 +135,8 @@ class DzianiBullage:
         self.results_npy_filepath = os.path.join(self.output_path, f'results{self.tag_file}.npy')
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
-              f'{self.diametre_detection=}\n{self.diametre_interpolation=}\n'
-              f'{self.centre_zone_de_detection=}\n{self.centre_interpolation=}\n'
+              f'{self.detection_diameter=}\n{self.interpolation_diameter=}\n'
+              f'{self.detection_center=}\n{self.interpolation_center=}\n'
               f'{self.VITESSE_MAX_CLASSES_VITESSES=}\n{self.output_path}'
               )
 
@@ -365,7 +366,7 @@ class DzianiBullage:
         if self.DISPLAY_PLOTS :
             plt.show()
 
-    def frame_to_grey_RGB(self,frame):
+    def frame_to_BGR2GRAY(self,frame):
         return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     def frame_to_grey_sum(self,frame):
@@ -378,8 +379,8 @@ class DzianiBullage:
         Calcule et retourne la vitesse des bulles dans une vidéo en utilisant des méthodes de détection de caractéristiques
         et de suivi optique
 
-        Return:
-        vitesses_m_per_sec (dict): Dictionnaire des vitesses calculées pour chaque bulle en mètres par seconde
+        return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+
         """
 
         video_file = cv2.VideoCapture(self.video_path)
@@ -411,12 +412,12 @@ class DzianiBullage:
         # Masques pour les zones de détection
         masque_detection = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)  # Crée un masque de la même taille que l'image, mais en niveaux de gris
         # Dessine un cercle plein (rayon 500) sur le masque avec une valeur de 255 (blanc)
-        cv2.circle(masque_detection, self.centre_zone_de_detection, self.diametre_detection, 255, thickness=-1)
+        cv2.circle(masque_detection, self.detection_center, self.detection_diameter, 255, thickness=-1)
         mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
-        cv2.circle(mask_interpolation, self.centre_interpolation, self.diametre_interpolation, 255, -1)
+        cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
 
 
-        image_precedente_grise = self.frame_to_grey_RGB(image_precedente)
+        image_precedente_grise = self.frame_to_BGR2GRAY(image_precedente)
         #image_precedente_grise = self.frame_to_grey_sum(image_precedente)
 
         # Utilise le masque circulaire pour la détection des caractéristiques
@@ -449,9 +450,13 @@ class DzianiBullage:
             #cv2.circle(frame, self.centre_interpolation, diametre_interpolation, couleur_zone_interpolation, 3)
 
         #    Calcul du flux optique pour suivre les caractéristiques d'une frame à l'autre
-            frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(image_precedente_grise, frame_gray, positions_initiales, None, **self.PARAMETRES_SUIVI)
+            #frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            frame_gray = self.frame_to_BGR2GRAY(frame)
+            #frame_gray = self.frame_to_grey_sum(frame)
 
+            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(image_precedente_grise, frame_gray, positions_initiales, None, **self.PARAMETRES_SUIVI)
+            #ic(positions_suivies)
+            #ic(statuts)
             # Filtrer les bons points suivis dans la nouvelle frame
             points_encore_suivis = positions_suivies[statuts == 1]
             points_initiaux_encore_suivis = positions_initiales[statuts == 1]
@@ -648,7 +653,7 @@ class DzianiBullage:
         masked_speeds = np.where(mask_interpolation[grid_y, grid_x], grid_z, np.nan)
         nan_speed_mask = np.isnan(grid_z) & (mask_interpolation[grid_y, grid_x] == 255)
 
-        aire_pixels= np.pi * ((self.diametre_interpolation / 2) ** 2)
+        aire_pixels= np.pi * ((self.interpolation_diameter / 2) ** 2)
         aire_metres = aire_pixels * (self.gsd_hauteur ** 2)
 
         #print(f"L'aire de la zone d'interpolation est de {aire_pixels:.2f} pixels")
@@ -832,7 +837,15 @@ def main():
     numeros_des_lignes_a_traiter = [11]
 
     duree_fenetre_analyse_seconde = 20
+    # Get parameters from a shared google sheet
+    # Load secrets from .env
+    load_dotenv()
     #csv_input_parameters_file = 'parametres.csv'
+    google_sheet_id = os.getenv("GG_SHEET_ID")
+    if google_sheet_id is None:
+        print('Id of google sheet is required to process data')
+        print('in the .env file')
+        print('ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF')
     #for numero_ligne in range(0,10) :
     for numero_ligne in numeros_des_lignes_a_traiter :
         dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,numero_ligne=numero_ligne,
@@ -840,15 +853,6 @@ def main():
                                        DPI_SAVED_IMAGES=120)
         if part == 1:
 
-            # Get parameters from a shared google sheet
-            # Load secrets from .env
-            load_dotenv()
-            #csv_input_parameters_file = 'parametres.csv'
-            google_sheet_id = os.getenv("GG_SHEET_ID")
-            if google_sheet_id is None:
-                print('Id of google sheet is required to process data')
-                print('in the .env file')
-                print('ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF')
 
 
             # nb of CPU to use
