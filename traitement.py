@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import os
 
 # Where are the data relative to this script
-root_data_path='./'
+root_data_path='E:/'
 
 numeros_des_lignes_a_traiter = 11
 
@@ -21,5 +21,5 @@ if google_sheet_id is None:
 #for numero_ligne in range(0,10) :
 dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,numero_ligne=numeros_des_lignes_a_traiter,
                                 root_data_path=root_data_path,duree_analyse=duree_fenetre_analyse_seconde,
-                                DPI_SAVED_IMAGES=120)
+                                DPI_SAVED_IMAGES=120,DISPLAY_PLOTS=True)
 dziani_bullage.moyennage_part_2()
