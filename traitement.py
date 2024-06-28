@@ -3,10 +3,6 @@ from DzianiBullage import DzianiBullage
 from dotenv import load_dotenv
 import os
 
-# part = 1 for video treatment
-# part = 2 for moyennage // interpolation
-part = 1
-
 # Where are the data relative to this script
 root_data_path='./'
 
