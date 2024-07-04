@@ -370,6 +370,26 @@ class DzianiBullage:
     def frame_to_grey_sum(self,frame):
         return (frame[:,:,0]+frame[:,:,1]+frame[:,:,2]).astype(np.uint8)
 
+    def save_trajet(self,masque_suivi, frame,points_encore_suivis,frame_count,debut_enchantillonnage):
+        self.draw_color_scale(frame, (200, 300), 500, 50)
+        cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+        cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+
+        current_time = frame_count / self.frames_par_second
+        time_text = f"Duree: {current_time:.2f}s / {self.duree_analyse:.2f}s"
+        cv2.putText(frame, time_text, (70, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+
+
+        img = cv2.add(frame, masque_suivi)
+        if self.DISPLAY_PLOTS:
+                    cv2.imshow('frame', img)
+
+        if self.SAVE_PLOTS :
+            filename = f'Trajets_des_bulles_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filepath = os.path.join(self.output_path, filename)
+            cv2.imwrite(filepath, img)
+
+
 
     def calculer_vitesse_bulles(self, debut_enchantillonnage ):
 
@@ -463,7 +483,6 @@ class DzianiBullage:
             image_precedente_grise = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2)
 
-            self.draw_color_scale(frame, (200, 300), 500, 50)
 
             if len(masque_suivi.shape) == 2 or masque_suivi.shape[2] == 1:  # mask est en niveaux de gris
                 masque_suivi = cv2.cvtColor(masque_detection, cv2.COLOR_GRAY2BGR)
@@ -504,39 +523,21 @@ class DzianiBullage:
                 #initial_positions = positions_initiales.copy()
                 initial_positions = np.array(positions_initiales)
 
-            cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
-            cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
-
-            current_time = frame_count / self.frames_per_second
-            time_text = f"Duree: {current_time:.2f}s / {self.window_size_seconds:.2f}s"
-            cv2.putText(frame, time_text, (70, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
-
-
-            img = cv2.add(frame, masque_suivi)
-            #cv2.imshow('frame', img)
 
             # on sauve l'image et le JSON a la derniere frame
             if frame_count == frames_per_window -1:
 
-                if self.SAVE_PLOTS :
-                    filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
-                    filepath = os.path.join(self.output_path, filename)
-                    cv2.imwrite(filepath, img)
+                if self.SAVE_PLOTS or self.DISPLAY_PLOTS :
+                    self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_enchantillonnage)
 
 
-                data_to_save = {
-                'data_vitesses_m/s': vitesses_m_per_sec,
-                }
+                data_to_save = {'data_vitesses_m/s': vitesses_m_per_sec}
                 data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
 
-                # Sauvegarde en JSON
+                # Sauvegarde data en JSON
                 with open(data_filepath, 'w') as json_file:
                     json.dump(data_to_save, json_file)
 
-
-
-            if self.DISPLAY_PLOTS & cv2.waitKey(30) & 0xFF == ord('q'):
-                break
 
             image_precedente_grise = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2)
