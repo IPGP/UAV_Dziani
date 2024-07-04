@@ -207,7 +207,7 @@ class DzianiBullage:
     def calculate_speed(self,point1, point2):
         """
         Calcule la vitesse entre deux points sur une image en fonction du FPS (frames per second)
-        frames_par_second : nombre de frames par seconde de la vidéo
+        frames_per_second : nombre de frames par seconde de la vidéo
         """
         # Calculer la distance euclidienne entre les deux points
         distance = np.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
@@ -375,7 +375,7 @@ class DzianiBullage:
         cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
         cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
-        current_time = frame_count / self.frames_par_second
+        current_time = frame_count / self.frames_per_second
         time_text = f"Duree: {current_time:.2f}s / {self.duree_analyse:.2f}s"
         cv2.putText(frame, time_text, (70, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
@@ -494,7 +494,7 @@ class DzianiBullage:
                 distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
                 speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
                 speed_m_per_sec = speed_px_per_sec * self.gsd_hauteur  # Convertit la vitesse en m/sec
-                #speed_m_per_sec = distance*self.frames_par_second*self.gsd_hauteur
+                #speed_m_per_sec = distance*self.frames_per_second*self.gsd_hauteur
 
                 all_points.append(new)  # Stocker le point
                 speeds_m_per_sec.append(speed_m_per_sec)
@@ -584,9 +584,9 @@ class DzianiBullage:
         #vitesses_globales_moyennes = [np.mean(speeds) for speeds in vitesses_m_per_sec.values() if len(speeds) > 0]
 
 
-        # # On recupere la premiere frame apres debut_enchantillonnage * frames_par_second
+        # # On recupere la premiere frame apres debut_enchantillonnage * frames_per_second
         # video_file = cv2.VideoCapture(self.video_path)
-        # video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_par_second)
+        # video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_per_second)
         # frame_available, frame_repartition_positions_initiales = video_file.read()
         # video_file.release()
 
