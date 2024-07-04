@@ -376,7 +376,7 @@ class DzianiBullage:
         cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
         current_time = frame_count / self.frames_per_second
-        time_text = f"Duree: {current_time:.2f}s / {self.duree_analyse:.2f}s"
+        time_text = f"Duree: {current_time:.2f}s / {self.window_size_seconds:.2f}s"
         cv2.putText(frame, time_text, (70, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
 
@@ -385,7 +385,7 @@ class DzianiBullage:
                     cv2.imshow('frame', img)
 
         if self.SAVE_PLOTS :
-            filename = f'Trajets_des_bulles_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
             filepath = os.path.join(self.output_path, filename)
             cv2.imwrite(filepath, img)
 
@@ -540,7 +540,7 @@ class DzianiBullage:
 
 
             image_precedente_grise = frame_gray.copy()
-            positions_initiales = points_encore_suivis.reshape(-1, 1, 2)
+            positions_initiales = points_encore_suivis.reshape(-1, 1, 2 )
 
         video_file.release()
 
