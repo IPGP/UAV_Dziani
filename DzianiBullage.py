@@ -23,15 +23,15 @@ class DzianiBullage:
 
     csv_file : str = None
     google_sheet_id: str = None
-    numero_ligne : int = 0
+    line_number : int = 0
 
     #Video
     video_path : str = ""
     date_video : str = ""
-    frames_par_second : int = 0
+    frames_per_second : int = 0
     total_frames : int = 0
     # duration en secondes
-    duration : float = 0
+    movie_length_seconds : float = 0
 
     ## Analyse
     gsd_hauteur : float = 0
@@ -40,19 +40,19 @@ class DzianiBullage:
     detection_center : tuple  = None
     interpolation_center: tuple = None
     colormap =  plt.cm.rainbow
-    nom_fichier_video : str = ""
+    input_video_filename : str = ""
     output_path : str = ""
     root_data_path : str = "./"
 
 
     CELL_SIZE: int =  500
-    NB_BULLES: int = 3000
+    NB_BUBBLES: int = 3000
 
     # dpi des images:
     DPI_SAVED_IMAGES: int = None
 
-    duree_analyse : int = 20 # en seconde
-    decalage_fenetre: int = 5 #en seconde
+    window_size_seconds : int = 20 # en seconde
+    windows_shift_seconds: int = 5 #en seconde
 
     ##### Si DISPLAY_PLOTS est vrai, le graphique est affiché à l'écran
     DISPLAY_PLOTS: bool = False
@@ -89,7 +89,9 @@ class DzianiBullage:
             if response.status_code == 200:
                 decoded_content = response.content.decode('utf-8')
                 CSV_DATA = csv.DictReader(decoded_content.splitlines(), delimiter=',')
-
+            else :
+                print(f"Google sheet \n{url} is not available")
+                sys.exit()
 
             # Vérifier que les colonnes nécessaires sont présentes
                 # Définir les nouvelles colonnes requises
@@ -99,13 +101,13 @@ class DzianiBullage:
                 'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
                 'CENTRE_INTERPOLATION']
 
-            for colonne in colonnes_requises:
-                if colonne not in CSV_DATA.fieldnames:
-                    raise ValueError(f"La colonne requise '{colonne}' est manquante dans le fichier CSV.")
+            for column in colonnes_requises:
+                if column not in CSV_DATA.fieldnames:
+                    raise ValueError(f"{column} is missing in the google sheet or in the csv file.")
 
         # Lire les données jusqu'à la ligne spécifique
                 for index, ligne in enumerate(CSV_DATA):
-                    if index == self.numero_ligne:
+                    if index == self.line_number:
                         donnees = ligne
         self.video_path = self.root_data_path+donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
@@ -118,19 +120,15 @@ class DzianiBullage:
 
 
 
-
-        aire_pixels_detection= np.pi * ((self.detection_diameter / 2) ** 2)
-        aire_metres_detection = aire_pixels_detection * (self.gsd_hauteur ** 2)
-
         # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
-        self.PARAMETRES_DETECTION = dict(maxCorners=self.NB_BULLES, qualityLevel=0.1, minDistance=0.5, blockSize=10)
-        self.PARAMETRES_SUIVI = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+        self.DETECTION_PARAMETERS = dict(maxCorners=self.NB_BUBBLES, qualityLevel=0.1, minDistance=0.5, blockSize=10)
+        self.TRACKING_PARAMETERS = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 
 
-        self.nom_fichier_video = os.path.basename(self.video_path)
-        self.output_path = f'{self.numero_ligne}_resultats_{self.duree_analyse}s_{self.decalage_fenetre}s_{self.date_video}_{self.nom_fichier_video}'
-        self.tag_file=f'_{self.numero_ligne}_{self.duree_analyse}s_{self.decalage_fenetre}s_{self.date_video}_{self.nom_fichier_video}'
+        self.input_video_filename = os.path.basename(self.video_path)
+        self.output_path = f'{self.line_number}_resultats_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
+        self.tag_file=f'_{self.line_number}_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
         self.results_csv_filepath = os.path.join(self.output_path, f'results{self.tag_file}.csv')
         self.results_npy_filepath = os.path.join(self.output_path, f'results{self.tag_file}.npy')
 
@@ -140,18 +138,18 @@ class DzianiBullage:
               f'{self.VITESSE_MAX_CLASSES_VITESSES=}\n{self.output_path}'
               )
 
-        self.nom_fichier_video = os.path.basename(self.video_path)
+        self.input_video_filename = os.path.basename(self.video_path)
         # Nom des fichiers de sorties et répertoires
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
 
-        # Get data from video file
-        self.get_video_data()
 
 
 
-        print(f"L'aire de la zone de detection est de {aire_pixels_detection:.2f} pixels")
-        print(f"L'aire de la zone de detection est de {aire_metres_detection:.2f} m²")
+        detection_area_pixels= np.pi * ((self.detection_diameter / 2) ** 2)
+        detection_area_meters = detection_area_pixels * (self.gsd_hauteur ** 2)
+        print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
+        print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
 
 
 
@@ -214,7 +212,7 @@ class DzianiBullage:
         # Calculer la distance euclidienne entre les deux points
         distance = np.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
         # Le temps entre les frames est l'inverse du FPS
-        time_interval = 1 / self.frames_par_second
+        time_interval = 1 / self.frames_per_second
         # La vitesse est distance par temps (pixels par seconde dans ce cas)
         return distance / time_interval
 
@@ -265,16 +263,16 @@ class DzianiBullage:
         color_bar_echelle = plt.colorbar(color_mesh, ax=ax)  # Ajout d'une barre de couleurs à l'échelle
         color_bar_echelle.set_label('Speed (m/s)')  # Étiquette de la barre de couleurs
 
-        plt.xlim(0, self.duree_analyse)
+        plt.xlim(0, self.window_size_seconds)
 
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Points suivis par l\'algorithme')
-        ax.set_title(f'Evolution des vitesses au cours du temps \nDate de la vidéo: {self.date_video} {self.nom_fichier_video} {self.duree_analyse}s {self.decalage_fenetre}s')
+        ax.set_title(f'Evolution des vitesses au cours du temps \nDate de la vidéo: {self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s')
 
         #ax.text(1.7, 1.02, f'Date de la vidéo: {self.date_video}', transform=ax.transAxes, horizontalalignment='right', fontsize=10, color='black')
 
         if self.SAVE_PLOTS :
-            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.numero_ligne}_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
             filepath = os.path.join(self.output_path, filename)
             fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
 
@@ -301,7 +299,7 @@ class DzianiBullage:
         plt.imshow(masked_speeds.T, extent=(0, largeur_pixel_carte_interpolee, hauteur_pixel_carte_interpolee, 0), origin='upper', cmap=self.colormap, norm=normalisation)
         echelle_color_bar = plt.colorbar()
         echelle_color_bar.set_label('Vitesse (m/s)')
-        plt.title(f"Carte des vitesses interpolées\n{self.date_video} {self.nom_fichier_video} {self.duree_analyse}s {self.decalage_fenetre}s")
+        plt.title(f"Carte des vitesses interpolées\n{self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s")
 
 
         # Ajout de l'échelle sur le graphique
@@ -321,7 +319,7 @@ class DzianiBullage:
 
 
         if self.SAVE_PLOTS :
-            filename = f'Carte_des_vitesses_interpolees_{self.numero_ligne}_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filename = f'Carte_des_vitesses_interpolees_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
             filepath = os.path.join(self.output_path, filename)
             plt.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
 
@@ -339,7 +337,7 @@ class DzianiBullage:
 
         normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)
         im = ax.imshow(nouvel_array_moyenne_high_res, cmap=self.colormap, interpolation='bilinear',norm=normalisation)
-        ax.set_title(f"Carte des vitesses moyennes intégrées \n{self.date_video} {self.nom_fichier_video} {self.duree_analyse}s {self.decalage_fenetre}s", fontsize=12)
+        ax.set_title(f"Carte des vitesses moyennes intégrées \n{self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s", fontsize=12)
 
         #Ajout d'une échelle pour l'illustration
         largeur_pixel_carte_interpolee, hauteur_pixel_carte_interpolee = nouvel_array_moyenne_high_res.shape[1], nouvel_array_moyenne_high_res.shape[0]
@@ -358,7 +356,7 @@ class DzianiBullage:
 
         if self.SAVE_PLOTS :
             # Chemin et nom du fichier pour sauvegarder
-            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.numero_ligne}_{self.date_video}_final.png'
+            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.line_number}_{self.date_video}_final.png'
             filepath = os.path.join(self.output_path, filename)
             fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)  # Sauvegarde de la figure
 
@@ -385,13 +383,13 @@ class DzianiBullage:
 
         video_file = cv2.VideoCapture(self.video_path)
         if not video_file.isOpened():
-            print(f"Erreur lors de l'ouverture de la vidéo {self.video_path}")
+            print(f"Error while opening video file {self.video_path}")
             sys.exit()
 
-        total_frames = int(self.duree_analyse * self.frames_par_second)
+        frames_per_window = int(self.window_size_seconds * self.frames_per_second)
 
         # Decalage du film pour se mettre au bon endroit pour les calculs
-        video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_par_second)
+        video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_per_second)
 
         # A priori ces variables ne sont jamais utilisées
         #nb_colonnes_grille = int(video_file.get(cv2.CAP_PROP_FRAME_WIDTH)) // CELL_SIZE
@@ -403,7 +401,7 @@ class DzianiBullage:
         # Lecture de la première frame et création du masque pour la zone de détection
         frame_available, image_precedente = video_file.read()
         if not frame_available:
-            print(f"Erreur de lecture de la première frame de {self.nom_fichier_video}")
+            print(f"Erreur de lecture de la première frame de {self.input_video_filename}")
             video_file.release()
             sys.exit()
         # Copy de la frame pour autre usage
@@ -421,7 +419,7 @@ class DzianiBullage:
         #image_precedente_grise = self.frame_to_grey_sum(image_precedente)
 
         # Utilise le masque circulaire pour la détection des caractéristiques
-        positions_initiales = cv2.goodFeaturesToTrack(image_precedente_grise,mask=masque_detection, **self.PARAMETRES_DETECTION)
+        positions_initiales = cv2.goodFeaturesToTrack(image_precedente_grise,mask=masque_detection, **self.DETECTION_PARAMETERS)
         masque_suivi = np.zeros_like(image_precedente)
 
 
@@ -431,10 +429,10 @@ class DzianiBullage:
         all_points = []  # Liste pour stocker tous les points de trajectoire
         speeds_m_per_sec = []
 
-        print(f'{self.nom_fichier_video} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.duree_analyse} secondes')
+        print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes')
 
-       # Boucle de traitement pour chaque frame jusqu'à atteindre le nombre total de frames
-        for frame_count in range(total_frames):
+       # Boucle de traitement pour chaque frame jusqu'à atteindre frames_per_window
+        for frame_count in range(frames_per_window):
 
             #avant_read_frame = time.time()
             frame_available, frame = video_file.read()
@@ -445,7 +443,7 @@ class DzianiBullage:
             if not frame_available:
                 break
 
-            #print(f'{debut_enchantillonnage:03} nb_frame {frame_count}/{total_frames}')
+            #print(f'{debut_enchantillonnage:03} nb_frame {frame_count}/{frames_per_window}')
             #cv2.circle(frame, self.centre_zone_de_detection, diametre_detection, couleur_zone_de_detection, 3)
             #cv2.circle(frame, self.centre_interpolation, diametre_interpolation, couleur_zone_interpolation, 3)
 
@@ -454,7 +452,7 @@ class DzianiBullage:
             frame_gray = self.frame_to_BGR2GRAY(frame)
             #frame_gray = self.frame_to_grey_sum(frame)
 
-            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(image_precedente_grise, frame_gray, positions_initiales, None, **self.PARAMETRES_SUIVI)
+            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(image_precedente_grise, frame_gray, positions_initiales, None, **self.TRACKING_PARAMETERS)
             #ic(positions_suivies)
             #ic(statuts)
             # Filtrer les bons points suivis dans la nouvelle frame
@@ -509,8 +507,8 @@ class DzianiBullage:
             cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
             cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
-            current_time = frame_count / self.frames_par_second
-            time_text = f"Duree: {current_time:.2f}s / {self.duree_analyse:.2f}s"
+            current_time = frame_count / self.frames_per_second
+            time_text = f"Duree: {current_time:.2f}s / {self.window_size_seconds:.2f}s"
             cv2.putText(frame, time_text, (70, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
 
@@ -518,10 +516,10 @@ class DzianiBullage:
             #cv2.imshow('frame', img)
 
             # on sauve l'image et le JSON a la derniere frame
-            if frame_count == total_frames -1:
+            if frame_count == frames_per_window -1:
 
                 if self.SAVE_PLOTS :
-                    filename = f'Trajets_des_bulles_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+                    filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
                     filepath = os.path.join(self.output_path, filename)
                     cv2.imwrite(filepath, img)
 
@@ -529,7 +527,7 @@ class DzianiBullage:
                 data_to_save = {
                 'data_vitesses_m/s': vitesses_m_per_sec,
                 }
-                data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.numero_ligne}_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.json')
+                data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
 
                 # Sauvegarde en JSON
                 with open(data_filepath, 'w') as json_file:
@@ -550,11 +548,11 @@ class DzianiBullage:
 
         vitesses_moyennes = {}
         for i, speed_list_per_frame in vitesses_m_per_sec.items():
-            if len(speed_list_per_frame) >= self.frames_par_second:
+            if len(speed_list_per_frame) >= self.frames_per_second:
     #           print(f'{debut_enchantillonnage:03} speed_list {speed_list_per_frame}')
-                ma_speeds = self.calculate_moving_average(speed_list_per_frame, self.frames_par_second)
+                ma_speeds = self.calculate_moving_average(speed_list_per_frame, self.frames_per_second)
                 #ma_speeds[::X] prend un point tout les X points
-                vitesses_moyennes[i] = ma_speeds[::self.frames_par_second]  # Extraire une moyenne tous les fps frames
+                vitesses_moyennes[i] = ma_speeds[::self.frames_per_second]  # Extraire une moyenne tous les fps frames
     #          print(f'{debut_enchantillonnage:03} vitesses_moyennes[i] {i} {vitesses_moyennes[i]}')
 
     #    for i, speeds in vitesses_moyennes.items():
@@ -568,7 +566,7 @@ class DzianiBullage:
         if  longest_length == -9999:
             print('-------------------------------------------------------------------')
             print(f'{debut_enchantillonnage:03} le nb de vitesse calculees dans vitesses_moyennes[0] est {len(vitesses_moyennes[0])}')
-            print(f'{debut_enchantillonnage:03} mais il en faudrait {self.duree_analyse}')
+            print(f'{debut_enchantillonnage:03} mais il en faudrait {self.window_size_seconds}')
             print(f'{debut_enchantillonnage:03} donc on sort')
             return []
 
@@ -591,7 +589,7 @@ class DzianiBullage:
         # frame_available, frame_repartition_positions_initiales = video_file.read()
         # video_file.release()
 
-        positions_initiales = cv2.goodFeaturesToTrack(cv2.cvtColor(frame_repartition_positions_initiales, cv2.COLOR_BGR2GRAY), mask=masque_detection, **self.PARAMETRES_DETECTION)
+        positions_initiales = cv2.goodFeaturesToTrack(cv2.cvtColor(frame_repartition_positions_initiales, cv2.COLOR_BGR2GRAY), mask=masque_detection, **self.DETECTION_PARAMETERS)
         if positions_initiales is not None:
             initial_positions = positions_initiales.reshape(-1, 2)  # Reshape p0 pour enlever la dimension inutile
 
@@ -606,7 +604,7 @@ class DzianiBullage:
 
             cv2.putText(frame_repartition_positions_initiales, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
-            filename = f'Repartition_des_positions_initiales_des_points_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.png'
+            filename = f'Repartition_des_positions_initiales_des_points_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
             filepath = os.path.join(self.output_path, filename)
             cv2.imwrite(filepath, frame_repartition_positions_initiales)
 
@@ -627,7 +625,7 @@ class DzianiBullage:
             speed_matrix[idx, :len(speeds)] = speeds
 
         # Convertir l'axe des temps en secondes (supposons 1 mesure par seconde ici)
-        time_steps = np.linspace(0, self.duree_analyse, total_frames)
+        time_steps = np.linspace(0, self.window_size_seconds, frames_per_window)
 
 
 
@@ -692,7 +690,7 @@ class DzianiBullage:
         'grid_z': grid_z.tolist(),
         'masked_speeds': masked_speeds.tolist()
     }
-        data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.duree_analyse}_{debut_enchantillonnage:03}.json')
+        data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
 
         # Sauvegarde en JSON
         with open(data_filepath, 'w') as json_file:
@@ -723,13 +721,13 @@ class DzianiBullage:
         self.frame_height = int(video_file.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         # Obtenir le taux de frames par seconde (fps)
-        self.frames_par_second = round(video_file.get(cv2.CAP_PROP_FPS))
+        self.frames_per_second = round(video_file.get(cv2.CAP_PROP_FPS))
         # Libérer les ressources
         video_file.release()
 
         # Calculer la durée en secondes
-        self.duration = round(self.total_frames / self.frames_par_second)
-        self.frame_time = 1 / self.frames_par_second  # Durée d'un frame en secondes
+        self.movie_length_seconds = round(self.total_frames / self.frames_per_second)
+        self.frame_time = 1 / self.frames_per_second  # Durée d'un frame en secondes
 
     def save_results(self):
         # Affichage des résultats pour vérification
@@ -848,9 +846,15 @@ def main():
         print('ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF')
     #for numero_ligne in range(0,10) :
     for numero_ligne in numeros_des_lignes_a_traiter :
-        dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,numero_ligne=numero_ligne,
-                                       root_data_path=root_data_path,duree_analyse=duree_fenetre_analyse_seconde,
+        dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne,
+                                       root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
                                        DPI_SAVED_IMAGES=120)
+        # Get data from video file
+        dziani_bullage.get_video_data()
+
+        # modifier la longueur d'analyse du fichier.
+        #dziani_bullage.movie_length_seconds = 30
+
         if part == 1:
 
 
@@ -858,7 +862,7 @@ def main():
             # nb of CPU to use
             cpu_nb = cpu_count()
             print("Working on the video file ")
-            array_arguments_for_calculer_vitesse_bulles =  list(range(0, dziani_bullage.duration - dziani_bullage.duree_analyse, dziani_bullage.decalage_fenetre))
+            array_arguments_for_calculer_vitesse_bulles =  list(range(0, dziani_bullage.movie_length_seconds - dziani_bullage.window_size_seconds, dziani_bullage.windows_shift_seconds))
 
             with Pool(processes=cpu_nb) as pool:
                 # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
