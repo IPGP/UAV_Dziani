@@ -532,11 +532,15 @@ class DzianiBullage:
 
 
                 data_to_save = {'data_vitesses_m/s': vitesses_m_per_sec}
-                data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
+                # data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
 
-                # Sauvegarde data en JSON
-                with open(data_filepath, 'w') as json_file:
-                    json.dump(data_to_save, json_file)
+                #Définir une variable globale = tableau des vitesses en fonction de leur posisition
+                nom_table_vitesse = f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
+                globals ()[nom_table_vitesse] = data_to_save
+
+                # # Sauvegarde data en JSON
+                # with open(data_filepath, 'w') as json_file:
+                #     json.dump(data_to_save, json_file)
 
 
             image_precedente_grise = frame_gray.copy()
@@ -643,41 +647,41 @@ class DzianiBullage:
         speeds = np.array(speeds_m_per_sec)
 
 
-        # Définition de la grille pour l'interpolation
-        grid_x, grid_y = np.mgrid[0:frame.shape[1]:100, 0:frame.shape[0]:100]
+        # # Définition de la grille pour l'interpolation
+        # grid_x, grid_y = np.mgrid[0:frame.shape[1]:100, 0:frame.shape[0]:100]
 
-        # Interpolation des vitesses sur la grille
-        grid_z = griddata(points, speeds, (grid_x, grid_y), method='nearest')
+        # # Interpolation des vitesses sur la grille
+        # grid_z = griddata(points, speeds, (grid_x, grid_y), method='nearest')
 
-        masked_speeds = np.where(mask_interpolation[grid_y, grid_x], grid_z, np.nan)
-        nan_speed_mask = np.isnan(grid_z) & (mask_interpolation[grid_y, grid_x] == 255)
+        # masked_speeds = np.where(mask_interpolation[grid_y, grid_x], grid_z, np.nan)
+        # nan_speed_mask = np.isnan(grid_z) & (mask_interpolation[grid_y, grid_x] == 255)
 
-        aire_pixels= np.pi * ((self.interpolation_diameter / 2) ** 2)
-        aire_metres = aire_pixels * (self.gsd_hauteur ** 2)
+        # aire_pixels= np.pi * ((self.interpolation_diameter / 2) ** 2)
+        # aire_metres = aire_pixels * (self.gsd_hauteur ** 2)
 
-        #print(f"L'aire de la zone d'interpolation est de {aire_pixels:.2f} pixels")
-        #print(f"L'aire de la zone d'interpolation est de {aire_metres:.2f} m²")
+        # #print(f"L'aire de la zone d'interpolation est de {aire_pixels:.2f} pixels")
+        # #print(f"L'aire de la zone d'interpolation est de {aire_metres:.2f} m²")
 
-        self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_enchantillonnage)
+        # self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_enchantillonnage)
 
 
-        low_speed_mask = (grid_z < self.BORNE_INF_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
-        medium_speed_mask = ((grid_z >= self.BORNE_INF_GRAPH) & (grid_z < self.BORNE_SUP_GRAPH)) & (mask_interpolation[grid_y, grid_x] == 255)
-        high_speed_mask = (grid_z >= self.BORNE_SUP_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
+        # low_speed_mask = (grid_z < self.BORNE_INF_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
+        # medium_speed_mask = ((grid_z >= self.BORNE_INF_GRAPH) & (grid_z < self.BORNE_SUP_GRAPH)) & (mask_interpolation[grid_y, grid_x] == 255)
+        # high_speed_mask = (grid_z >= self.BORNE_SUP_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
 
-        # Calcul de l'aire en pixels pour chaque classe
-        low_speed_area_pixels = np.sum(low_speed_mask)
-        medium_speed_area_pixels = np.sum(medium_speed_mask)
-        high_speed_area_pixels = np.sum(high_speed_mask)
+        # # Calcul de l'aire en pixels pour chaque classe
+        # low_speed_area_pixels = np.sum(low_speed_mask)
+        # medium_speed_area_pixels = np.sum(medium_speed_mask)
+        # high_speed_area_pixels = np.sum(high_speed_mask)
 
-        mask_active_pixels = np.sum(mask_interpolation[grid_y, grid_x] == 255)
+        # mask_active_pixels = np.sum(mask_interpolation[grid_y, grid_x] == 255)
 
-        # Conversion en mètres carrés en utilisant le GSD
-        low_speed_area_m2_grille = (low_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
-        medium_speed_area_m2_grille = (medium_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
-        high_speed_area_m2_grille = (high_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+        # # Conversion en mètres carrés en utilisant le GSD
+        # low_speed_area_m2_grille = (low_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+        # medium_speed_area_m2_grille = (medium_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+        # high_speed_area_m2_grille = (high_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
 
-        mask_area_m2 = (mask_active_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
+        # mask_area_m2 = (mask_active_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
 
         #print(f"Aire des faibles vitesses: {low_speed_area_m2_grille:.2f} m²")
         #print(f"Aire des vitesses moyennes: {medium_speed_area_m2_grille:.2f} m²")
@@ -685,17 +689,27 @@ class DzianiBullage:
         #print(f"Aire du masque d'interpolation: {mask_area_m2:.2f} m²")
 
 
-        data_to_save = {
-        'grid_x': grid_x.tolist(),
-        'grid_y': grid_y.tolist(),
-        'grid_z': grid_z.tolist(),
-        'masked_speeds': masked_speeds.tolist()
-    }
-        data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
+    #     data_to_save = {
+    #     'grid_x': grid_x.tolist(),
+    #     'grid_y': grid_y.tolist(),
+    #     'grid_z': grid_z.tolist(),
+    #     'masked_speeds': masked_speeds.tolist()
+    # }
+    #     data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
 
-        # Sauvegarde en JSON
-        with open(data_filepath, 'w') as json_file:
-            json.dump(data_to_save, json_file)
+        data_to_save = {
+        'points': points.tolist(),
+        'Speeds': speeds.tolist(),
+    }
+        # data_filepath = os.path.join(self.output_path, f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
+        
+        #Définir une variable globale = tableau des vitesses en fonction de leur posisition
+        nom_table_vitesse_2 = f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
+        globals ()[nom_table_vitesse_2] = data_to_save
+       
+        # # Sauvegarde en JSON
+        # with open(data_filepath, 'w') as json_file:
+        #     json.dump(data_to_save, json_file)
 
         #print(f"Les données interpolées ont été sauvegardées dans le fichier {data_filepath}")
 
@@ -706,7 +720,7 @@ class DzianiBullage:
         #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
         #self.results.append([ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille])
         #print(self.results)
-        return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+        #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
 
     def get_video_data(self):
 
@@ -831,7 +845,7 @@ def main():
     part = 1
 
     # Where are the data relative to this script
-    root_data_path='./'
+    root_data_path='E:/'
 
     numeros_des_lignes_a_traiter = [11]
 
@@ -849,12 +863,12 @@ def main():
     for numero_ligne in numeros_des_lignes_a_traiter :
         dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne,
                                        root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
-                                       DPI_SAVED_IMAGES=120)
+                                       DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=True)
         # Get data from video file
         dziani_bullage.get_video_data()
 
         # modifier la longueur d'analyse du fichier.
-        #dziani_bullage.movie_length_seconds = 30
+        dziani_bullage.movie_length_seconds = 60
 
         if part == 1:
 
@@ -872,10 +886,10 @@ def main():
 
             dziani_bullage.results = results_local
             # On sauve les resultats
-            dziani_bullage.save_results()
+            #dziani_bullage.save_results()
 
             #print("Résultats:")
-            #print(dziani_bullage.results)
+            print(dziani_bullage.results)
 
             fin_traitement_video = time.time()
             now_fin_traitement_video = datetime.datetime.now()
@@ -884,7 +898,7 @@ def main():
             print(f'duree  {fin_traitement_video - start_time}')
             print("Working on the data ")
 
-            dziani_bullage.moyennage_part_2()
+            #dziani_bullage.moyennage_part_2()
 
         elif part == 2 :
             print("Working on the data ")
