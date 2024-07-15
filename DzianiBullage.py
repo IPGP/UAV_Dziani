@@ -16,6 +16,9 @@ from matplotlib import patches
 from scipy.interpolate import griddata
 from dotenv import load_dotenv
 from icecream import ic
+import socket
+
+
 
 
 @dataclass
@@ -117,7 +120,7 @@ class DzianiBullage:
         self.interpolation_center = eval(donnees['CENTRE_INTERPOLATION'])
         self.VITESSE_MAX_CLASSES_VITESSES = float(donnees['VITESSE_MAX_CLASSES_VITESSES'])
 
-        self.all_points = {}
+        self.all_points = []
 
 
         # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
@@ -200,8 +203,7 @@ class DzianiBullage:
 
         # Ajouter des annotations pour la vitesse minimale et maximale
         cv2.putText(frame, f'{self.VITESSE_MIN_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 10, position_echelle_couleur[1] + hauteur_echelle_couleur), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
-        cv2.putText(frame, f'{self.
-                    AX_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 5, position_echelle_couleur[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
+        cv2.putText(frame, f'{self.VITESSE_MAX_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 5, position_echelle_couleur[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
 
 
 
@@ -534,13 +536,13 @@ class DzianiBullage:
 
 
                 data_to_save = {'data_vitesses_m/s': vitesses_m_per_sec,
-                                
+
                                 }
-                # data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
+                data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
 
                 #Définir une variable globale = tableau des vitesses en fonction de leur posisition
                 nom_table_vitesse = f's_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
-                globals ()[nom_table_vitesse] = data_to_save
+                #globals ()[nom_table_vitesse] = data_to_save
 
                 # # Sauvegarde data en JSON
                 # with open(data_filepath, 'w') as json_file:
@@ -706,11 +708,11 @@ class DzianiBullage:
         'Speeds': speeds.tolist(),
     }
         # data_filepath = os.path.join(self.output_path, f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
-        
+
         #Définir une variable globale = tableau des vitesses en fonction de leur posisition
         nom_table_vitesse_2 = f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
-        globals ()[nom_table_vitesse_2] = data_to_save
-       
+        #globals ()[nom_table_vitesse_2] = data_to_save
+
         # # Sauvegarde en JSON
         # with open(data_filepath, 'w') as json_file:
         #     json.dump(data_to_save, json_file)
@@ -724,9 +726,11 @@ class DzianiBullage:
         #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
         #self.results.append([ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille])
         #print(self.results)
-        self.all_points[debut_enchantillonnage]= all_points # Liste pour stocker tous les points de trajectoire
+        #if points:
+        #    self.all_points.append(debut_enchantillonnage, points) # Liste pour stocker tous les points de trajectoire
+        return [vitesses_m_per_sec,points,speeds]
         #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
-        
+
 
     def get_video_data(self):
 
@@ -850,9 +854,7 @@ def main():
     # part = 2 for moyennage // interpolation
     part = 1
 
-    # Where are the data relative to this script
-    root_data_path='E:/'
-
+    root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
     numeros_des_lignes_a_traiter = [11]
 
     duree_fenetre_analyse_seconde = 20
@@ -869,7 +871,7 @@ def main():
     for numero_ligne in numeros_des_lignes_a_traiter :
         dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne,
                                        root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
-                                       DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=True)
+                                       DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=False)
         # Get data from video file
         dziani_bullage.get_video_data()
 

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import socket
 from DzianiBullage import DzianiBullage
 from dotenv import load_dotenv
 import os
@@ -6,6 +7,11 @@ import time
 import datetime
 from multiprocessing import Pool,cpu_count
 
+
+
+# pour détruire toutes les variables !
+from IPython import get_ipython;
+get_ipython().magic('reset -sf')
 
 
 # Where are the data relative to this script
@@ -23,10 +29,15 @@ part = 1
 
 # Where are the data relative to this script
 root_data_path='E:/'
+cpu_nb = 10
+
+if 'ncpu' in socket.gethostname():
+    root_data_path='./'
+    cpu_nb = cpu_count()
 
 numeros_des_lignes_a_traiter = [11]
 
-duree_fenetre_analyse_seconde = 5
+duree_fenetre_analyse_seconde = 2
 # Get parameters from a shared google sheet
 # Load secrets from .env
 load_dotenv()
@@ -40,20 +51,17 @@ if google_sheet_id is None:
 for numero_ligne in numeros_des_lignes_a_traiter :
     dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne,
                                    root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
-                                   DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=True)
+                                   DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=False)
     # Get data from video file
     dziani_bullage.get_video_data()
 
     # modifier la longueur d'analyse du fichier.
-    dziani_bullage.movie_length_seconds = 20
-    
+    dziani_bullage.movie_length_seconds = 10
+
 
     if part == 1:
 
-
-
         # nb of CPU to use
-        cpu_nb = 5
         print("Working on the video file ")
         array_arguments_for_calculer_vitesse_bulles =  list(range(0, dziani_bullage.movie_length_seconds - dziani_bullage.window_size_seconds, dziani_bullage.windows_shift_seconds))
 
