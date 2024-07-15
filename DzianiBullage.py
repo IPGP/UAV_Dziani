@@ -44,7 +44,6 @@ class DzianiBullage:
     output_path : str = ""
     root_data_path : str = "./"
 
-
     CELL_SIZE: int =  500
     NB_BUBBLES: int = 3000
 
@@ -118,6 +117,7 @@ class DzianiBullage:
         self.interpolation_center = eval(donnees['CENTRE_INTERPOLATION'])
         self.VITESSE_MAX_CLASSES_VITESSES = float(donnees['VITESSE_MAX_CLASSES_VITESSES'])
 
+        self.all_points = {}
 
 
         # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
@@ -200,7 +200,8 @@ class DzianiBullage:
 
         # Ajouter des annotations pour la vitesse minimale et maximale
         cv2.putText(frame, f'{self.VITESSE_MIN_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 10, position_echelle_couleur[1] + hauteur_echelle_couleur), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
-        cv2.putText(frame, f'{self.VITESSE_MAX_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 5, position_echelle_couleur[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
+        cv2.putText(frame, f'{self.
+                    AX_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 5, position_echelle_couleur[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
 
 
 
@@ -400,6 +401,7 @@ class DzianiBullage:
         return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
 
         """
+        print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes start')
 
         video_file = cv2.VideoCapture(self.video_path)
         if not video_file.isOpened():
@@ -446,7 +448,7 @@ class DzianiBullage:
         distances_totales = {}  # Distances totales parcourues par chaque point
         total_times = {}  # Temps total de suivi pour chaque point
         vitesses_m_per_sec = {}
-        all_points = []  # Liste pour stocker tous les points de trajectoire
+        all_points = [] # Liste pour stocker tous les points de trajectoire
         speeds_m_per_sec = []
 
         print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes')
@@ -531,11 +533,13 @@ class DzianiBullage:
                     self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_enchantillonnage)
 
 
-                data_to_save = {'data_vitesses_m/s': vitesses_m_per_sec}
+                data_to_save = {'data_vitesses_m/s': vitesses_m_per_sec,
+                                
+                                }
                 # data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
 
                 #Définir une variable globale = tableau des vitesses en fonction de leur posisition
-                nom_table_vitesse = f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
+                nom_table_vitesse = f's_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
                 globals ()[nom_table_vitesse] = data_to_save
 
                 # # Sauvegarde data en JSON
@@ -720,7 +724,9 @@ class DzianiBullage:
         #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
         #self.results.append([ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille])
         #print(self.results)
+        self.all_points[debut_enchantillonnage]= all_points # Liste pour stocker tous les points de trajectoire
         #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+        
 
     def get_video_data(self):
 
