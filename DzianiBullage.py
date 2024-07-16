@@ -457,7 +457,7 @@ class DzianiBullage:
         speeds_m_per_sec = []
 
 
-        status_modulo = 20
+        status_update_seconds= 10
 
         #table_colors = cmap(np.linspace(0, 1,))
         nb_shift_total =int(self.movie_length_seconds - self.window_size_seconds/self.windows_shift_seconds)
@@ -471,7 +471,7 @@ class DzianiBullage:
 
        # Boucle de traitement pour chaque frame jusqu'à atteindre frames_per_window
         t=trange(frames_per_window,desc=f'{debut_enchantillonnage:03} ',
-                                  miniters=status_modulo,
+                                  mininterval=status_update_seconds,
                                   position=nb_shift,
                                   colour=colors.rgb2hex(table_colors[nb_shift]))
 
