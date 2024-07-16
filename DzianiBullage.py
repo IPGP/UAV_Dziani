@@ -17,7 +17,7 @@ from matplotlib import colors, patches
 from scipy.interpolate import griddata
 from dotenv import load_dotenv
 from icecream import ic
-from tqdm.auto import trange
+from tqdm import trange
 
 
 
@@ -457,14 +457,23 @@ class DzianiBullage:
         speeds_m_per_sec = []
 
 
-        status_modulo = 25
+        status_modulo = 20
 
+        #table_colors = cmap(np.linspace(0, 1,))
+        nb_shift_total =int(self.movie_length_seconds - self.window_size_seconds/self.windows_shift_seconds)
+        table_colors = plt.colormaps.get_cmap('plasma').resampled(nb_shift_total).colors
+        #custom_palette = [mpl.colors.rgb2hex(cmap(i)) for i in range(cmap.N)]
+
+        #print(f'{debut_enchantillonnage:03} {nb_shift} {colors.rgb2hex(table_colors[nb_shift])}')
+        #return []
+
+        # https://matplotlib.org/stable/gallery/color/individual_colors_from_cmap.html
 
        # Boucle de traitement pour chaque frame jusqu'à atteindre frames_per_window
         for frame_count in trange(frames_per_window,desc=f'{debut_enchantillonnage:03} ',
                                   miniters=status_modulo,
                                   position=nb_shift,
-                                  colour=colors.rgb2hex(self.colormap(np.linspace(0, 1, self.windows_shift_seconds)[nb_shift]))):
+                                  colour=colors.rgb2hex(table_colors[nb_shift])):
 
             #    print(f'{debut_enchantillonnage:03} {frame_count}/{frames_per_window}')
 

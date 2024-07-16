@@ -6,6 +6,7 @@ import os
 import datetime
 from dotenv import load_dotenv
 from DzianiBullage import DzianiBullage
+from icecream import ic
 
 
 
@@ -72,8 +73,7 @@ if __name__ == '__main__':
             # On sauve les resultats
             #dziani_bullage.save_results()
 
-            #print("Résultats:")
-            print(dziani_bullage.results)
+            print("les résultats sont dans dziani_bullage.results")
 
             fin_traitement_video = time.time()
             now_fin_traitement_video = datetime.datetime.now()
