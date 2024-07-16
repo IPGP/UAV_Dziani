@@ -6,17 +6,18 @@ import datetime
 import csv
 import time
 import json
-import requests
+import socket
 from multiprocessing import Pool,cpu_count
 from dataclasses import dataclass, field
+import requests
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import patches
+from matplotlib import colors, patches
 from scipy.interpolate import griddata
 from dotenv import load_dotenv
 from icecream import ic
-import socket
+from tqdm.auto import trange
 
 
 
@@ -97,11 +98,12 @@ class DzianiBullage:
 
             # Vérifier que les colonnes nécessaires sont présentes
                 # Définir les nouvelles colonnes requises
-            colonnes_requises = ['VIDEO_PATH','numero','commentaires', 'VITESSE_MAX_CLASSES_VITESSES',
-                'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
-                'DIAMETRE_INTERPOLATION', 'aire_detection_m2',
-                'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
-                'CENTRE_INTERPOLATION']
+            colonnes_requises = ['VIDEO_PATH','numero','commentaires',
+                                 'VITESSE_MAX_CLASSES_VITESSES',
+                                 'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
+                                 'DIAMETRE_INTERPOLATION', 'aire_detection_m2',
+                                 'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
+                                 'CENTRE_INTERPOLATION']
 
             for column in colonnes_requises:
                 if column not in CSV_DATA.fieldnames:
@@ -385,7 +387,7 @@ class DzianiBullage:
 
         img = cv2.add(frame, masque_suivi)
         if self.DISPLAY_PLOTS:
-                    cv2.imshow('frame', img)
+            cv2.imshow('frame', img)
 
         if self.SAVE_PLOTS :
             filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
@@ -403,7 +405,8 @@ class DzianiBullage:
         return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
 
         """
-        print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes start')
+        #print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes start')
+        nb_shift = int(debut_enchantillonnage/self.windows_shift_seconds)
 
         video_file = cv2.VideoCapture(self.video_path)
         if not video_file.isOpened():
@@ -453,10 +456,17 @@ class DzianiBullage:
         all_points = [] # Liste pour stocker tous les points de trajectoire
         speeds_m_per_sec = []
 
-        print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes')
+
+        status_modulo = 25
+
 
        # Boucle de traitement pour chaque frame jusqu'à atteindre frames_per_window
-        for frame_count in range(frames_per_window):
+        for frame_count in trange(frames_per_window,desc=f'{debut_enchantillonnage:03} ',
+                                  miniters=status_modulo,
+                                  position=nb_shift,
+                                  colour=colors.rgb2hex(self.colormap(np.linspace(0, 1, self.windows_shift_seconds)[nb_shift]))):
+
+            #    print(f'{debut_enchantillonnage:03} {frame_count}/{frames_per_window}')
 
             #avant_read_frame = time.time()
             frame_available, frame = video_file.read()
