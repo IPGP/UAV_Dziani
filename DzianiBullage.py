@@ -470,11 +470,13 @@ class DzianiBullage:
         # https://matplotlib.org/stable/gallery/color/individual_colors_from_cmap.html
 
        # Boucle de traitement pour chaque frame jusqu'à atteindre frames_per_window
-        for frame_count in trange(frames_per_window,desc=f'{debut_enchantillonnage:03} ',
+        t=trange(frames_per_window,desc=f'{debut_enchantillonnage:03} ',
                                   miniters=status_modulo,
                                   position=nb_shift,
-                                  colour=colors.rgb2hex(table_colors[nb_shift])):
+                                  colour=colors.rgb2hex(table_colors[nb_shift]))
 
+        for frame_count in t:
+            t.set_postfix(refresh=False)
             #    print(f'{debut_enchantillonnage:03} {frame_count}/{frames_per_window}')
 
             #avant_read_frame = time.time()
