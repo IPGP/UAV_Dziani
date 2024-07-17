@@ -34,10 +34,9 @@ class DzianiBullage:
     date_video : str = ""
     frames_per_second : int = 0
     total_frames : int = 0
-    # duration en secondes
     movie_length_seconds : float = 0
 
-    ## Analyse
+    ## Analysis
     gsd_hauteur : float = 0
     detection_diameter : int = 0
     interpolation_diameter: int = 0
@@ -51,11 +50,11 @@ class DzianiBullage:
     CELL_SIZE: int =  500
     NB_BUBBLES: int = 3000
 
-    # dpi des images:
+    # images DPI:
     DPI_SAVED_IMAGES: int = None
 
-    window_size_seconds : int = 20 # en seconde
-    windows_shift_seconds: int = 5 #en seconde
+    window_size_seconds : int = 20 #  seconds
+    windows_shift_seconds: int = 5 # seconds
 
     ##### Si DISPLAY_PLOTS est vrai, le graphique est affiché à l'écran
     DISPLAY_PLOTS: bool = False

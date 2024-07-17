@@ -30,7 +30,7 @@ if __name__ == '__main__':
     root_data_path='E:/'
     cpu_nb = 10
 
-    if 'ncpu' in socket.gethostname() or 'ipgp' in socket.gethostname():
+    if 'ncpu' in socket.gethostname() or 'ipgp' in socket.gethostname() or '.local' in socket.gethostname():
         root_data_path='./'
         cpu_nb = cpu_count()
 
