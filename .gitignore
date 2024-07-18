@@ -26,3 +26,5 @@ Resul*
 .env
 .spy*
 __pycache__
+*.png
+*.json
