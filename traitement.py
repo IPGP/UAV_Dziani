@@ -88,5 +88,3 @@ if __name__ == '__main__':
             print("Working on the data ")
             dziani_bullage.moyennage_part_2()
 
-
-Results = dziani_bullage.results

@@ -420,10 +420,13 @@ class DzianiBullage:
         mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
         # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
         cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
-        #Image avec la position des cercles de détection et d'interpolation
-        filename = f'Cercles_interpolation_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
-        filepath = os.path.join(self.output_path, filename)
-        cv2.imwrite(filepath, first_frame_copy)
+        # #Image avec la position des cercles de détection et d'interpolation
+        # if debut_echantillonnage == 0 :
+        #             cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness=-1)
+        #             cv2.circle(first_frame_copy, self.interpolation_center, self.interpolation_diameter, 255, thickness=-1) 
+        #             filename = f'Cercles_interpolation_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+        #             filepath = os.path.join(self.output_path, filename)
+        #             cv2.imwrite(filepath, first_frame_copy)
 
         # Détermination des caractéristiques de détection
         first_frame_gray = self.frame_to_BGR2GRAY(first_frame)
@@ -815,7 +818,7 @@ def main():
     root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
     numeros_des_lignes_a_traiter = [11]
 
-    duree_fenetre_analyse_seconde = 20
+    duree_fenetre_analyse_seconde = 5
     # Get parameters from a shared google sheet
     # Load secrets from .env
     load_dotenv()
@@ -834,7 +837,7 @@ def main():
         dziani_bullage.get_video_data()
 
         # modifier la longueur d'analyse du fichier.
-        dziani_bullage.movie_length_seconds = 60
+        dziani_bullage.movie_length_seconds = 15
 
         if part == 1:
 
