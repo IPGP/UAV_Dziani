@@ -157,21 +157,6 @@ class DzianiBullage:
 
 
 
-    def color_and_class_classification_for_speed(self,speed:float) -> tuple[tuple, str]:
-        """
-        Pour une vitesse speed,
-        Retourne un tuple (couleur class, str de la classe de classe)
-        speed_class : classe de vitesse ('low', 'medium' ou 'high')
-        """
-        if speed < self.BORNE_INF_GRAPH:
-            return ((0, 255, 255),'low')  # Basse vitesse
-
-        if speed < self.BORNE_SUP_GRAPH:
-            return ((0, 165, 255),'medium')  # Vitesse moyenne
-
-        return ((0, 0, 255),'high')  # Haute vitesse
-
-
 
     def speed_to_color(self,speed):
         """
@@ -258,7 +243,7 @@ class DzianiBullage:
             position_y_debut += 120
 
 
-    def tracer_vitesse_vs_temps(self,numero_bulles_triees,speed_matrix , time_steps,debut_enchantillonnage):
+    def tracer_vitesse_vs_temps(self,numero_bulles_triees,speed_matrix , time_steps,debut_echantillonnage):
 
         fig, ax = plt.subplots()
         normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)  # Normalisation des données de vitesse pour l'échelle de couleur
@@ -276,7 +261,7 @@ class DzianiBullage:
         #ax.text(1.7, 1.02, f'Date de la vidéo: {self.date_video}', transform=ax.transAxes, horizontalalignment='right', fontsize=10, color='black')
 
         if self.SAVE_PLOTS :
-            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
+            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
             filepath = os.path.join(self.output_path, filename)
             fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
 
@@ -285,7 +270,7 @@ class DzianiBullage:
 
 
 
-    def tracer_carte_vitesses_interpolees(self,frame, masked_speeds, debut_enchantillonnage):
+    def tracer_carte_vitesses_interpolees(self,frame, masked_speeds, debut_echantillonnage):
 
         """
         Trace une carte des vitesses interpolées avec une échelle de couleurs
@@ -323,7 +308,7 @@ class DzianiBullage:
 
 
         if self.SAVE_PLOTS :
-            filename = f'Carte_des_vitesses_interpolees_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
+            filename = f'Carte_des_vitesses_interpolees_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
             filepath = os.path.join(self.output_path, filename)
             plt.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
 
@@ -374,7 +359,7 @@ class DzianiBullage:
     def frame_to_grey_sum(self,frame):
         return (frame[:,:,0]+frame[:,:,1]+frame[:,:,2]).astype(np.uint8)
 
-    def save_trajet(self,masque_suivi, frame,points_encore_suivis,frame_count,debut_enchantillonnage):
+    def save_trajet(self,masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage):
         self.draw_color_scale(frame, (200, 300), 500, 50)
         cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
         cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
@@ -389,23 +374,23 @@ class DzianiBullage:
             cv2.imshow('frame', img)
 
         if self.SAVE_PLOTS :
-            filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
+            filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
             filepath = os.path.join(self.output_path, filename)
             cv2.imwrite(filepath, img)
 
 
 
-    def calculer_vitesse_bulles(self, debut_enchantillonnage ):
+    def calculer_vitesse_bulles(self, debut_echantillonnage ):
 
         """
         Calcule et retourne la vitesse des bulles dans une vidéo en utilisant des méthodes de détection de caractéristiques
         et de suivi optique
 
-        return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+        return [ debut_echantillonnage, points, speeds]
 
         """
-        #print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_enchantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes start')
-        nb_shift = int(debut_enchantillonnage/self.windows_shift_seconds)
+        print(f'{self.input_video_filename} Calcul calculer_vitesse_bulles for offset {debut_echantillonnage:03} avec une fenetre de {self.window_size_seconds} secondes start')
+        nb_shift = int(debut_echantillonnage/self.windows_shift_seconds)
 
         video_file = cv2.VideoCapture(self.video_path)
         if not video_file.isOpened():
@@ -415,45 +400,42 @@ class DzianiBullage:
         frames_per_window = int(self.window_size_seconds * self.frames_per_second)
 
         # Decalage du film pour se mettre au bon endroit pour les calculs
-        video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_per_second)
+        video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_echantillonnage * self.frames_per_second)
 
-        # A priori ces variables ne sont jamais utilisées
-        #nb_colonnes_grille = int(video_file.get(cv2.CAP_PROP_FRAME_WIDTH)) // CELL_SIZE
-        #nb_lignes_grille = int(video_file.get(cv2.CAP_PROP_FRAME_HEIGHT)) // CELL_SIZE
-        #grid_counter = np.zeros((nb_lignes_grille, nb_colonnes_grille), dtype=int)
-
-
-
-        # Lecture de la première frame et création du masque pour la zone de détection
-        frame_available, image_precedente = video_file.read()
+        # Lecture de la première frame et création
+        frame_available, first_frame = video_file.read()
         if not frame_available:
             print(f"Erreur de lecture de la première frame de {self.input_video_filename}")
             video_file.release()
             sys.exit()
         # Copy de la frame pour autre usage
-        frame_repartition_positions_initiales=np.array(image_precedente)
-
-        # Masques pour les zones de détection
+        first_frame_copy=np.array(first_frame)
+            
+        # Cercles de détection et d'interpolation
+        # Masque pour définir le cercle de détection
         masque_detection = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)  # Crée un masque de la même taille que l'image, mais en niveaux de gris
-        # Dessine un cercle plein (rayon 500) sur le masque avec une valeur de 255 (blanc)
+        # Dessine un cercle plein = cercle de détection sur le masque avec une valeur de 255 (blanc)
         cv2.circle(masque_detection, self.detection_center, self.detection_diameter, 255, thickness=-1)
+        # Masque pour définir le cercle d'interpolation
         mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
+        # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
         cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
+        #Image avec la position des cercles de détection et d'interpolation
+        filename = f'Cercles_interpolation_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+        filepath = os.path.join(self.output_path, filename)
+        cv2.imwrite(filepath, first_frame_copy)
 
+        # Détermination des caractéristiques de détection
+        first_frame_gray = self.frame_to_BGR2GRAY(first_frame)
+        positions_initiales = cv2.goodFeaturesToTrack(first_frame_gray,mask=masque_detection, **self.DETECTION_PARAMETERS)
+        masque_suivi = np.zeros_like(first_frame)
 
-        image_precedente_grise = self.frame_to_BGR2GRAY(image_precedente)
-        #image_precedente_grise = self.frame_to_grey_sum(image_precedente)
-
-        # Utilise le masque circulaire pour la détection des caractéristiques
-        positions_initiales = cv2.goodFeaturesToTrack(image_precedente_grise,mask=masque_detection, **self.DETECTION_PARAMETERS)
-        masque_suivi = np.zeros_like(image_precedente)
-
-
+        #Définition des résultats des calculs
         distances_totales = {}  # Distances totales parcourues par chaque point
         total_times = {}  # Temps total de suivi pour chaque point
-        vitesses_m_per_sec = {}
+        speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
         all_points = [] # Liste pour stocker tous les points de trajectoire
-        speeds_m_per_sec = []
+        speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
 
 
         status_update_seconds= 10
@@ -463,20 +445,23 @@ class DzianiBullage:
         table_colors = plt.colormaps.get_cmap('plasma').resampled(nb_shift_total).colors
         #custom_palette = [mpl.colors.rgb2hex(cmap(i)) for i in range(cmap.N)]
 
-        #print(f'{debut_enchantillonnage:03} {nb_shift} {colors.rgb2hex(table_colors[nb_shift])}')
+        #print(f'{debut_echantillonnage:03} {nb_shift} {colors.rgb2hex(table_colors[nb_shift])}')
         #return []
 
         # https://matplotlib.org/stable/gallery/color/individual_colors_from_cmap.html
 
        # Boucle de traitement pour chaque frame jusqu'à atteindre frames_per_window
-        t=trange(frames_per_window,desc=f'{debut_enchantillonnage:03} ',
+        t=trange(frames_per_window,desc=f'{debut_echantillonnage:03} ',
                                   mininterval=status_update_seconds,
                                   position=nb_shift,
                                   colour=colors.rgb2hex(table_colors[nb_shift]))
 
+        #Renommage de la first frame pour l'initiation de la boucle
+        previous_frame_gray = first_frame_gray.copy()
+        
         for frame_count in t:
             t.set_postfix(refresh=False)
-            #    print(f'{debut_enchantillonnage:03} {frame_count}/{frames_per_window}')
+            #    print(f'{debut_echantillonnage:03} {frame_count}/{frames_per_window}')
 
             #avant_read_frame = time.time()
             frame_available, frame = video_file.read()
@@ -487,16 +472,10 @@ class DzianiBullage:
             if not frame_available:
                 break
 
-            #print(f'{debut_enchantillonnage:03} nb_frame {frame_count}/{frames_per_window}')
-            #cv2.circle(frame, self.centre_zone_de_detection, diametre_detection, couleur_zone_de_detection, 3)
-            #cv2.circle(frame, self.centre_interpolation, diametre_interpolation, couleur_zone_interpolation, 3)
-
-        #    Calcul du flux optique pour suivre les caractéristiques d'une frame à l'autre
-            #frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            #Calcul du flux optique pour suivre les caractéristiques d'une frame à l'autre
             frame_gray = self.frame_to_BGR2GRAY(frame)
-            #frame_gray = self.frame_to_grey_sum(frame)
 
-            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(image_precedente_grise, frame_gray, positions_initiales, None, **self.TRACKING_PARAMETERS)
+            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(previous_frame_gray, frame_gray, positions_initiales, None, **self.TRACKING_PARAMETERS)
             #ic(positions_suivies)
             #ic(statuts)
             # Filtrer les bons points suivis dans la nouvelle frame
@@ -504,7 +483,7 @@ class DzianiBullage:
             points_initiaux_encore_suivis = positions_initiales[statuts == 1]
 
 
-            image_precedente_grise = frame_gray.copy()
+            previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2)
 
 
@@ -518,7 +497,6 @@ class DzianiBullage:
                 distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
                 speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
                 speed_m_per_sec = speed_px_per_sec * self.gsd_hauteur  # Convertit la vitesse en m/sec
-                #speed_m_per_sec = distance*self.frames_per_second*self.gsd_hauteur
 
                 all_points.append(new)  # Stocker le point
                 speeds_m_per_sec.append(speed_m_per_sec)
@@ -527,12 +505,13 @@ class DzianiBullage:
 
                 color = self.speed_to_color(speed_m_per_sec)
                 #cv2.line(masque_suivi, (int(x_newPoint), int(y_newPoint)), (int(x_oldPoint), int(y_oldPoint)), color, rayon_cercle_largeur_ligne)
-                cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
+                if debut_echantillonnage == 0 :
+                    cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
                 #cv2.circle(frame, (int(x_newPoint), int(y_newPoint)), rayon_cercle_largeur_ligne, color, -1)
 
-                if i not in vitesses_m_per_sec:
-                    vitesses_m_per_sec[i] = []
-                vitesses_m_per_sec[i].append(speed_m_per_sec)
+                if i not in speed_m_per_sec_par_trajet:
+                    speed_m_per_sec_par_trajet[i] = []
+                speed_m_per_sec_par_trajet[i].append(speed_m_per_sec)
 
 
                 # Initialisation s'ils n'existent pas déjà
@@ -548,57 +527,43 @@ class DzianiBullage:
                 initial_positions = np.array(positions_initiales)
 
 
-            # on sauve l'image et le JSON a la derniere frame
-            if frame_count == frames_per_window -1:
+            # on sauve l'image à la derniere frame pour début_echantillonnage = 0
+            if debut_echantillonnage == 0 :
+                if frame_count == frames_per_window -1:
+                    if self.SAVE_PLOTS or self.DISPLAY_PLOTS :
+                        self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
 
-                if self.SAVE_PLOTS or self.DISPLAY_PLOTS :
-                    self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_enchantillonnage)
-
-
-                data_to_save = {'data_vitesses_m/s': vitesses_m_per_sec,
-
-                                }
-                data_filepath = os.path.join(self.output_path, f'vitesses_m_par_s_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
-
-                #Définir une variable globale = tableau des vitesses en fonction de leur posisition
-                nom_table_vitesse = f's_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
-                #globals ()[nom_table_vitesse] = data_to_save
-
-                # # Sauvegarde data en JSON
-                # with open(data_filepath, 'w') as json_file:
-                #     json.dump(data_to_save, json_file)
-
-
-            image_precedente_grise = frame_gray.copy()
+            previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2 )
 
         video_file.release()
 
-        #print(f'Fin traitement video for offset {debut_enchantillonnage:03}')
+        #print(f'Fin traitement video for offset {debut_echantillonnage:03}')
 
 
+        #Vitesses au cours du temps
         vitesses_moyennes = {}
-        for i, speed_list_per_frame in vitesses_m_per_sec.items():
+        for i, speed_list_per_frame in speed_m_per_sec_par_trajet.items():
             if len(speed_list_per_frame) >= self.frames_per_second:
-    #           print(f'{debut_enchantillonnage:03} speed_list {speed_list_per_frame}')
+    #           print(f'{debut_echantillonnage:03} speed_list {speed_list_per_frame}')
                 ma_speeds = self.calculate_moving_average(speed_list_per_frame, self.frames_per_second)
                 #ma_speeds[::X] prend un point tout les X points
                 vitesses_moyennes[i] = ma_speeds[::self.frames_per_second]  # Extraire une moyenne tous les fps frames
-    #          print(f'{debut_enchantillonnage:03} vitesses_moyennes[i] {i} {vitesses_moyennes[i]}')
+    #          print(f'{debut_echantillonnage:03} vitesses_moyennes[i] {i} {vitesses_moyennes[i]}')
 
     #    for i, speeds in vitesses_moyennes.items():
     #        print(f"Point {i}: Moyenne des vitesses sur chaque seconde = {speeds}")
     #        print(f'type speed {type(speed)} ')
         bubble_ids = list(vitesses_moyennes.keys())
         #print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
-        #print(f'{debut_enchantillonnage:03} (len(speeds) for speeds in vitesses_moyennes.values() {(len(speeds) for speeds in vitesses_moyennes.values())}')
+        #print(f'{debut_echantillonnage:03} (len(speeds) for speeds in vitesses_moyennes.values() {(len(speeds) for speeds in vitesses_moyennes.values())}')
         longest_length = max((len(speeds) for speeds in vitesses_moyennes.values()),default=-9999)
 
         if  longest_length == -9999:
             print('-------------------------------------------------------------------')
-            print(f'{debut_enchantillonnage:03} le nb de vitesse calculees dans vitesses_moyennes[0] est {len(vitesses_moyennes[0])}')
-            print(f'{debut_enchantillonnage:03} mais il en faudrait {self.window_size_seconds}')
-            print(f'{debut_enchantillonnage:03} donc on sort')
+            print(f'{debut_echantillonnage:03} le nb de vitesse calculees dans vitesses_moyennes[0] est {len(vitesses_moyennes[0])}')
+            print(f'{debut_echantillonnage:03} mais il en faudrait {self.window_size_seconds}')
+            print(f'{debut_echantillonnage:03} donc on sort')
             return []
 
         time_steps = np.linspace(0, (longest_length - 1) * 1, longest_length)
@@ -609,50 +574,22 @@ class DzianiBullage:
 
         speed_matrix = np.full((len(bubble_ids), longest_length), np.nan)
 
-        vitesse_moyenne_totale = {bubble_id: np.mean(speeds) for bubble_id, speeds in vitesses_m_per_sec.items()}
+        vitesse_moyenne_totale = {bubble_id: np.mean(speeds) for bubble_id, speeds in speed_m_per_sec_par_trajet.items()}
 
-        #vitesses_globales_moyennes = [np.mean(speeds) for speeds in vitesses_m_per_sec.values() if len(speeds) > 0]
+        #vitesses_globales_moyennes = [np.mean(speeds) for speeds in speed_m_per_sec_par_trajet.values() if len(speeds) > 0]
 
-
-        # # On recupere la premiere frame apres debut_enchantillonnage * frames_per_second
-        # video_file = cv2.VideoCapture(self.video_path)
-        # video_file.set(cv2.CAP_PROP_POS_FRAMES, debut_enchantillonnage * self.frames_per_second)
-        # frame_available, frame_repartition_positions_initiales = video_file.read()
-        # video_file.release()
-
-        positions_initiales = cv2.goodFeaturesToTrack(cv2.cvtColor(frame_repartition_positions_initiales, cv2.COLOR_BGR2GRAY), mask=masque_detection, **self.DETECTION_PARAMETERS)
-        if positions_initiales is not None:
-            initial_positions = positions_initiales.reshape(-1, 2)  # Reshape p0 pour enlever la dimension inutile
-
-            # Accéder aux vitesses moyennes depuis le dictionnaire
-            for position, index in zip(initial_positions, range(len(initial_positions))):
-                if index in vitesse_moyenne_totale:
-                    speed = vitesse_moyenne_totale[index]
-                    color,speed_class= self.color_and_class_classification_for_speed(speed)
-                    cv2.circle(frame_repartition_positions_initiales, (int(position[0]), int(position[1])), 5, color, -1)
-
-            self.draw_legend(frame_repartition_positions_initiales)
-
-            cv2.putText(frame_repartition_positions_initiales, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
-
-            filename = f'Repartition_des_positions_initiales_des_points_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.png'
-            filepath = os.path.join(self.output_path, filename)
-            cv2.imwrite(filepath, frame_repartition_positions_initiales)
-
-                #cv2.imshow('Repartition des positions initailes des points', cv2.resize(first_frame, (960, 540)))
-                #cv2.waitKey(0)
-
+       
         # Trier les bulles par leur vitesse moyenne (croissante pour ce cas)
         sorted_bubble_ids = sorted(vitesse_moyenne_totale, key=vitesse_moyenne_totale.get)
 
 
-        longest_length = max(len(speeds) for speeds in vitesses_m_per_sec.values())
+        longest_length = max(len(speeds) for speeds in speed_m_per_sec_par_trajet.values())
         speed_matrix = np.full((len(sorted_bubble_ids), longest_length), np.nan)
         time_steps = np.linspace(0, (longest_length - 1) * 1, longest_length)
 
 
         for idx, bubble_id in enumerate(sorted_bubble_ids):
-            speeds = vitesses_m_per_sec[bubble_id]
+            speeds = speed_m_per_sec_par_trajet[bubble_id]
             speed_matrix[idx, :len(speeds)] = speeds
 
         # Convertir l'axe des temps en secondes (supposons 1 mesure par seconde ici)
@@ -661,16 +598,17 @@ class DzianiBullage:
 
 
         # Graph plot VS speed
-        #print(f"{debut_enchantillonnage:03} tracer_vitesse_vs_temps @@")
-        #print(f"{debut_enchantillonnage:03} Shapes {sorted_bubble_ids} {speed_matrix} {time_steps}")
-        self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_enchantillonnage)
+        #print(f"{debut_echantillonnage:03} tracer_vitesse_vs_temps @@")
+        #print(f"{debut_echantillonnage:03} Shapes {sorted_bubble_ids} {speed_matrix} {time_steps}")
+        if debut_echantillonnage == 0 :
+            self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
 
 
         ### Calcul interpolation
-        #print(f"Calcul interpolation {debut_enchantillonnage:03}")
+        #print(f"Calcul interpolation {debut_echantillonnage:03}")
 
-        points = np.array(all_points)
-        speeds = np.array(speeds_m_per_sec)
+        # points = np.array(all_points)
+        # speeds = np.array(speeds_m_per_sec)
 
 
         # # Définition de la grille pour l'interpolation
@@ -688,7 +626,7 @@ class DzianiBullage:
         # #print(f"L'aire de la zone d'interpolation est de {aire_pixels:.2f} pixels")
         # #print(f"L'aire de la zone d'interpolation est de {aire_metres:.2f} m²")
 
-        # self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_enchantillonnage)
+        # self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_echantillonnage)
 
 
         # low_speed_mask = (grid_z < self.BORNE_INF_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
@@ -721,16 +659,16 @@ class DzianiBullage:
     #     'grid_z': grid_z.tolist(),
     #     'masked_speeds': masked_speeds.tolist()
     # }
-    #     data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
+    #     data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.json')
 
-        data_to_save = {
-        'points': points.tolist(),
-        'Speeds': speeds.tolist(),
-    }
-        # data_filepath = os.path.join(self.output_path, f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}.json')
+    #     data_to_save = {
+    #     'points': points.tolist(),
+    #     'Speeds': speeds.tolist(),
+    # }
+        # data_filepath = os.path.join(self.output_path, f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.json')
 
         #Définir une variable globale = tableau des vitesses en fonction de leur posisition
-        nom_table_vitesse_2 = f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_enchantillonnage:03}'
+        #nom_table_vitesse_2 = f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}'
         #globals ()[nom_table_vitesse_2] = data_to_save
 
         # # Sauvegarde en JSON
@@ -740,16 +678,16 @@ class DzianiBullage:
         #print(f"Les données interpolées ont été sauvegardées dans le fichier {data_filepath}")
 
 
-        #print(f'Fin calculer_vitesse_bulles for offset {debut_enchantillonnage:03}')
+        #print(f'Fin calculer_vitesse_bulles for offset {debut_echantillonnage:03}')
 
 
-        #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
-        #self.results.append([ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille])
+        #return [ debut_echantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+        #self.results.append([ debut_echantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille])
         #print(self.results)
         #if points:
-        #    self.all_points.append(debut_enchantillonnage, points) # Liste pour stocker tous les points de trajectoire
-        return [vitesses_m_per_sec,points,speeds]
-        #return [ debut_enchantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
+        #    self.all_points.append(debut_echantillonnage, points) # Liste pour stocker tous les points de trajectoire
+        return [all_points,speeds_m_per_sec]
+        #return [ debut_echantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
 
 
     def get_video_data(self):

@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     numeros_des_lignes_a_traiter = [11]
 
-    duree_fenetre_analyse_seconde = 20
+    duree_fenetre_analyse_seconde = 5
     # Get parameters from a shared google sheet
     # Load secrets from .env
     load_dotenv()
@@ -55,7 +55,7 @@ if __name__ == '__main__':
         dziani_bullage.get_video_data()
 
         # modifier la longueur d'analyse du fichier.
-        dziani_bullage.movie_length_seconds = 60
+        dziani_bullage.movie_length_seconds = 15
 
 
         if part == 1:
@@ -87,3 +87,6 @@ if __name__ == '__main__':
         elif part == 2 :
             print("Working on the data ")
             dziani_bullage.moyennage_part_2()
+
+
+Results = dziani_bullage.results
