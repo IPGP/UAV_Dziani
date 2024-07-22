@@ -142,7 +142,6 @@ class DzianiBullage:
               f'{self.VITESSE_MAX_CLASSES_VITESSES=}\n{self.output_path}'
               )
 
-        self.input_video_filename = os.path.basename(self.video_path)
         # Nom des fichiers de sorties et répertoires
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
@@ -270,7 +269,7 @@ class DzianiBullage:
 
 
 
-    def tracer_carte_vitesses_interpolees(self,frame, masked_speeds, debut_echantillonnage):
+    def tracer_carte_vitesses_interpolees(self, frame, masked_speeds, debut_echantillonnage):
 
         """
         Trace une carte des vitesses interpolées avec une échelle de couleurs
@@ -421,12 +420,12 @@ class DzianiBullage:
         # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
         cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
         # #Image avec la position des cercles de détection et d'interpolation
-        # if debut_echantillonnage == 0 :
-        #             cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness=-1)
-        #             cv2.circle(first_frame_copy, self.interpolation_center, self.interpolation_diameter, 255, thickness=-1) 
-        #             filename = f'Cercles_interpolation_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
-        #             filepath = os.path.join(self.output_path, filename)
-        #             cv2.imwrite(filepath, first_frame_copy)
+        if debut_echantillonnage == 0 :
+                    cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
+                    cv2.circle(first_frame_copy, self.interpolation_center, self.interpolation_diameter, 255, thickness= 2) 
+                    filename = f'Cercles_interpolation_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+                    filepath = os.path.join(self.output_path, filename)
+                    cv2.imwrite(filepath, first_frame_copy)
 
         # Détermination des caractéristiques de détection
         first_frame_gray = self.frame_to_BGR2GRAY(first_frame)
@@ -436,9 +435,9 @@ class DzianiBullage:
         #Définition des résultats des calculs
         distances_totales = {}  # Distances totales parcourues par chaque point
         total_times = {}  # Temps total de suivi pour chaque point
-        speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
-        all_points = [] # Liste pour stocker tous les points de trajectoire
+        all_points = [] # Liste pour stocker toutes les positions X et Y des points
         speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
+        speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
 
 
         status_update_seconds= 10
@@ -740,66 +739,60 @@ class DzianiBullage:
             writer.writerow(header)
             writer.writerows(self.results)
 
+      
 
+    def interpolation(self):
+        Results = self.results
+        print(Results[0])
 
+        # Extraction et regroupement des données
+        positions_X = []
+        positions_Y = []
+        speeds = []
 
-    def moyennage_part_2(self):
-        self.results_array = np.load(self.results_npy_filepath)
+        for item in Results:
+            arrays = item[0]
+            values = item[1]
+            
+            for arr, value in zip(arrays, values):
+                positions_X.append(arr[0])
+                positions_Y.append(arr[1])
+                speeds.append(value)
 
-        #Ajout carte des vitesses moyennes interpolées intégrée sur toute la vidéo
+        # Conversion en tableaux NumPy
+        positions_X = np.array(positions_X)
+        positions_Y = np.array(positions_Y)
+        speeds = np.array(speeds)
 
-        # Liste pour stocker les données des fichiers JSON
-        self.donnees_json = []
+        # Création d'une grille pour l'interpolation
+        grid_X, grid_Y = np.meshgrid(np.linspace(min(positions_X), max(positions_Y), 100), np.linspace(min(positions_X), max(positions_Y), 100))
 
-        print('lecture des fichiers JSON')
+        # Interpolation des vitesses sur la grille
+        grid_speeds = griddata((positions_X, positions_Y), speeds, (grid_X, grid_Y), method='linear', rescale = True)
 
-        # Parcourir tous les fichiers dans le dossier
-        for filename in os.listdir(self.output_path):
-            # Vérifier si le fichier est un fichier JSON
-            if filename.endswith('.json'):
-                # Construire le chemin complet vers le fichier JSON
-                filepath = os.path.join(self.output_path, filename)
-                #print(f'lecture du fichier JSON {filepath}')
-                # Ouvrir le fichier JSON en mode lecture
-                with open(filepath, 'r') as file:
-                    # Charger les données JSON
-                    data = json.load(file)
-                    # Vérifier si la clé 'masked_speeds' existe dans les données
-                    if 'masked_speeds' in data:
-                        # Ajouter les données au dictionnaire avec le nom du fichier comme clé
-                        self.donnees_json.append({filename[:-5]: data['masked_speeds']})
+        # Masque pour définir le cercle d'interpolation
+        mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
+        # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
+        cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
+        
+        masked_speeds = np.where(mask_interpolation[grid_Y, grid_X], grid_speeds, np.nan)
+        # nan_speed_mask = np.isnan(grid_speeds) & (mask_interpolation[grid_Y, grid_X] == 255)
+        
+        video_file = cv2.VideoCapture(self.video_path)
+        # Lecture de la première frame et création
+        frame_available, first_frame = video_file.read()
+        if not frame_available:
+            print(f"Erreur de lecture de la première frame de {self.input_video_filename}")
+            video_file.release()
+            sys.exit()
+        # Copy de la frame pour autre usage
+        frame=np.array(first_frame)
+        debut_echantillonnage = 0
+        
+        self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_echantillonnage)
 
-        # Créer les variables à partir des données importées
-        for donnees in self.donnees_json:
-            nom_variable, data = list(donnees.items())[0]
-            globals()[nom_variable] = np.array(data)
-
-        # Vérifier les noms et les dimensions des variables créées
-        #print("Variables créées :", list(locals().keys()))
-        print("Variables créées :", list(globals().keys()))
-
-        # Créer une liste contenant tous les tableaux à additionner
-        #tous_les_tableaux = [valeur for nom, valeur in locals().items() if nom.startswith(f'donnees_interpolees_{self.date_video}')]
-        tous_les_tableaux = [valeur for nom, valeur in globals().items() if nom.startswith(f'donnees_interpolees_{self.date_video}')]
-
-        # Moyenner tous les tableaux à l'aide de np.mean()
-        nouvel_array_moyenne = np.mean(tous_les_tableaux, axis=0)
-
-        # Afficher le nouvel array additionné
-        #print("Nouvel array moyenné :\n", nouvel_array_moyenne)
-
-        # Additionner tous les tableaux à l'aide de np.sum()
-        #nouvel_array_addition = np.sum(tous_les_tableaux, axis=0)
-
-        # Afficher le nouvel array additionné
-        #print("Nouvel array additionné :\n", nouvel_array_addition)
-        # Créer une image moyenne
-        # Tripler la résolution de la grille
-        #new_shape = (nouvel_array_moyenne.shape[0] * 1, nouvel_array_moyenne.shape[1] * 3)
-        nouvel_array_moyenne_high_res = np.kron(nouvel_array_moyenne, np.ones((1, 1)))
-
-        print("Carte des vitesses moyennes intégrées")
-        self.tracer_carte_vitesses_integrees_video_totale(nouvel_array_moyenne_high_res)
+        # print("Carte des vitesses moyennes intégrées")
+        # self.tracer_carte_vitesses_integrees_video_totale(nouvel_array_moyenne_high_res)
 
 
 def main():
@@ -813,7 +806,7 @@ def main():
 
     # part = 1 for video treatment
     # part = 2 for moyennage // interpolation
-    part = 1
+    part = 2
 
     root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
     numeros_des_lignes_a_traiter = [11]
@@ -871,7 +864,10 @@ def main():
 
         elif part == 2 :
             print("Working on the data ")
-            dziani_bullage.moyennage_part_2()
+            #dziani_bullage.moyennage_part_2()
+            dziani_bullage.interpolation()
+
+
 
 if __name__ == "__main__":
     main()
