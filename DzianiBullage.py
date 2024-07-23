@@ -764,35 +764,6 @@ class DzianiBullage:
         positions_Y = np.array(positions_Y)
         speeds = np.array(speeds)
 
-        # Création d'une grille pour l'interpolation
-        grid_X, grid_Y = np.meshgrid(np.linspace(min(positions_X), max(positions_Y), 100), np.linspace(min(positions_X), max(positions_Y), 100))
-
-        # Interpolation des vitesses sur la grille
-        grid_speeds = griddata((positions_X, positions_Y), speeds, (grid_X, grid_Y), method='linear', rescale = True)
-
-        # Masque pour définir le cercle d'interpolation
-        mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
-        # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
-        cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
-        
-        masked_speeds = np.where(mask_interpolation[grid_Y, grid_X], grid_speeds, np.nan)
-        # nan_speed_mask = np.isnan(grid_speeds) & (mask_interpolation[grid_Y, grid_X] == 255)
-        
-        video_file = cv2.VideoCapture(self.video_path)
-        # Lecture de la première frame et création
-        frame_available, first_frame = video_file.read()
-        if not frame_available:
-            print(f"Erreur de lecture de la première frame de {self.input_video_filename}")
-            video_file.release()
-            sys.exit()
-        # Copy de la frame pour autre usage
-        frame=np.array(first_frame)
-        debut_echantillonnage = 0
-        
-        self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_echantillonnage)
-
-        # print("Carte des vitesses moyennes intégrées")
-        # self.tracer_carte_vitesses_integrees_video_totale(nouvel_array_moyenne_high_res)
 
 
 def main():
@@ -806,7 +777,7 @@ def main():
 
     # part = 1 for video treatment
     # part = 2 for moyennage // interpolation
-    part = 2
+    part = 1
 
     root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
     numeros_des_lignes_a_traiter = [11]
