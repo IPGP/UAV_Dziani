@@ -18,13 +18,14 @@ from scipy.interpolate import griddata
 from dotenv import load_dotenv
 from icecream import ic
 from tqdm import trange
-
+import pickle
 
 
 
 @dataclass
 class DzianiBullage:
 
+    cpu_nb : int
     csv_file : str = None
     google_sheet_id: str = None
     line_number : int = 0
@@ -135,6 +136,7 @@ class DzianiBullage:
         self.tag_file=f'_{self.line_number}_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
         self.results_csv_filepath = os.path.join(self.output_path, f'results{self.tag_file}.csv')
         self.results_npy_filepath = os.path.join(self.output_path, f'results{self.tag_file}.npy')
+        self.results_pickle_filepath = os.path.join(self.output_path, f'results{self.tag_file}.pkl')
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
               f'{self.detection_diameter=}\n{self.interpolation_diameter=}\n'
@@ -145,7 +147,6 @@ class DzianiBullage:
         # Nom des fichiers de sorties et répertoires
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
-
 
 
 
@@ -378,6 +379,27 @@ class DzianiBullage:
             cv2.imwrite(filepath, img)
 
 
+    def get_video_data(self):
+
+        # Ouvrir la vidéo
+        video_file = cv2.VideoCapture(self.video_path)
+        if not video_file.isOpened():
+            print(f"Erreur: impossible d'ouvrir la vidéo {self.video_path}")
+            sys.exit()
+
+        # Obtenir le nombre total de frames
+        self.total_frames = int(video_file.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.frame_width = int(video_file.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.frame_height = int(video_file.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # Obtenir le taux de frames par seconde (fps)
+        self.frames_per_second = round(video_file.get(cv2.CAP_PROP_FPS))
+        # Libérer les ressources
+        video_file.release()
+
+        # Calculer la durée en secondes
+        self.movie_length_seconds = round(self.total_frames / self.frames_per_second)
+        self.frame_time = 1 / self.frames_per_second  # Durée d'un frame en secondes
 
     def calculer_vitesse_bulles(self, debut_echantillonnage ):
 
@@ -409,7 +431,7 @@ class DzianiBullage:
             sys.exit()
         # Copy de la frame pour autre usage
         first_frame_copy=np.array(first_frame)
-            
+
         # Cercles de détection et d'interpolation
         # Masque pour définir le cercle de détection
         masque_detection = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)  # Crée un masque de la même taille que l'image, mais en niveaux de gris
@@ -422,7 +444,7 @@ class DzianiBullage:
         # #Image avec la position des cercles de détection et d'interpolation
         if debut_echantillonnage == 0 :
                     cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
-                    cv2.circle(first_frame_copy, self.interpolation_center, self.interpolation_diameter, 255, thickness= 2) 
+                    cv2.circle(first_frame_copy, self.interpolation_center, self.interpolation_diameter, 255, thickness= 2)
                     filename = f'Cercles_interpolation_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
                     filepath = os.path.join(self.output_path, filename)
                     cv2.imwrite(filepath, first_frame_copy)
@@ -440,7 +462,7 @@ class DzianiBullage:
         speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
 
 
-        status_update_seconds= 10
+        status_update_seconds= 3
 
         #table_colors = cmap(np.linspace(0, 1,))
         nb_shift_total =int(self.movie_length_seconds - self.window_size_seconds/self.windows_shift_seconds)
@@ -460,7 +482,7 @@ class DzianiBullage:
 
         #Renommage de la first frame pour l'initiation de la boucle
         previous_frame_gray = first_frame_gray.copy()
-        
+
         for frame_count in t:
             t.set_postfix(refresh=False)
             #    print(f'{debut_echantillonnage:03} {frame_count}/{frames_per_window}')
@@ -530,10 +552,9 @@ class DzianiBullage:
 
 
             # on sauve l'image à la derniere frame pour début_echantillonnage = 0
-            if debut_echantillonnage == 0 :
-                if frame_count == frames_per_window -1:
-                    if self.SAVE_PLOTS or self.DISPLAY_PLOTS :
-                        self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
+            if debut_echantillonnage == 0 and frame_count == frames_per_window -1:
+                if self.SAVE_PLOTS or self.DISPLAY_PLOTS :
+                    self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
 
             previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2 )
@@ -580,7 +601,7 @@ class DzianiBullage:
 
         #vitesses_globales_moyennes = [np.mean(speeds) for speeds in speed_m_per_sec_par_trajet.values() if len(speeds) > 0]
 
-       
+
         # Trier les bulles par leur vitesse moyenne (croissante pour ce cas)
         sorted_bubble_ids = sorted(vitesse_moyenne_totale, key=vitesse_moyenne_totale.get)
 
@@ -692,68 +713,58 @@ class DzianiBullage:
         #return [ debut_echantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
 
 
-    def get_video_data(self):
+    def video_file_analysis(self):
+        print("Working on the video file ")
+        array_arguments_for_calculer_vitesse_bulles =  list(range(0, self.movie_length_seconds - self.window_size_seconds, self.windows_shift_seconds))
 
-        # Ouvrir la vidéo
-        video_file = cv2.VideoCapture(self.video_path)
-        if not video_file.isOpened():
-            print(f"Erreur: impossible d'ouvrir la vidéo {self.video_path}")
-            sys.exit()
+        with Pool(processes=self.cpu_nb) as pool:
+            # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
+            #  de la array_arguments_for_calculer_vitesse_bulles
+            results_local=pool.map(self.calculer_vitesse_bulles, array_arguments_for_calculer_vitesse_bulles)
 
-        # Obtenir le nombre total de frames
-        self.total_frames = int(video_file.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.frame_width = int(video_file.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.frame_height = int(video_file.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.results_array=results_local
+        #print(f'results_local.shape {results_local.shape}')
+        #print(f'results_array.shape {self.results_array.shape}')
 
-        # Obtenir le taux de frames par seconde (fps)
-        self.frames_per_second = round(video_file.get(cv2.CAP_PROP_FPS))
-        # Libérer les ressources
-        video_file.release()
 
-        # Calculer la durée en secondes
-        self.movie_length_seconds = round(self.total_frames / self.frames_per_second)
-        self.frame_time = 1 / self.frames_per_second  # Durée d'un frame en secondes
 
-    def save_results(self):
+    def save_results_pickle(self):
         # Affichage des résultats pour vérification
 
-        print('Sauvegarde des resultats en Numpy')
-        # Convertir la liste des résultats en tableau NumPy
-        self.results_array = np.array(self.results)
+        print('Sauvegarde des resultats en pickle')
 
         # Sauvegarder le tableau NumPy dans un fichier
         #np.save('results.npy', results_array)
 
-        with open(self.results_npy_filepath, 'wb') as f:
-            np.save(f, self.results_array)
+        with open(self.results_pickle_filepath, "wb") as pickle_results_file:   #Pickling
+            pickle.dump(self.results_array,pickle_results_file)
 
-        print('Sauvegarde des resultats en CSV')
-        self.save_results_list_to_csv()
 
-    def save_results_list_to_csv(self):
-    #    __import__("IPython").embed()
 
-        header = ['Offset'] + ['low_speed_area_m2_grille'] + ['medium_speed_area_m2_grille']+ ['high_speed_area_m2_grille']
-        with open(self.results_csv_filepath, 'w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(header)
-            writer.writerows(self.results)
 
-      
+    def load_results_pickle(self):
+        # Affichage des résultats pour vérification
+
+        print('Lecture des resultats en pickle')
+
+        with open(self.results_pickle_filepath, "rb") as pickle_results_file:   #Pickling
+            self.results_array=pickle.load(pickle_results_file)
+
+
+
 
     def interpolation(self):
-        Results = self.results
-        print(Results[0])
+        print(self.results_array[0])
 
         # Extraction et regroupement des données
         positions_X = []
         positions_Y = []
         speeds = []
 
-        for item in Results:
+        for item in self.results_array:
             arrays = item[0]
             values = item[1]
-            
+
             for arr, value in zip(arrays, values):
                 positions_X.append(arr[0])
                 positions_Y.append(arr[1])
@@ -764,79 +775,80 @@ class DzianiBullage:
         positions_Y = np.array(positions_Y)
         speeds = np.array(speeds)
 
+        # Création d'une grille pour l'interpolation
+        grid_X, grid_Y = np.meshgrid(np.linspace(min(positions_X), max(positions_Y), 100), np.linspace(min(positions_X), max(positions_Y), 100))
+
+        # Interpolation des vitesses sur la grille
+        grid_speeds = griddata((positions_X, positions_Y), speeds, (grid_X, grid_Y), method='linear', rescale = True)
+
+        # Masque pour définir le cercle d'interpolation
+        mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
+        # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
+        cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
+
+        masked_speeds = np.where(mask_interpolation[grid_Y, grid_X], grid_speeds, np.nan)
+        # nan_speed_mask = np.isnan(grid_speeds) & (mask_interpolation[grid_Y, grid_X] == 255)
+
+        video_file = cv2.VideoCapture(self.video_path)
+        # Lecture de la première frame et création
+        frame_available, first_frame = video_file.read()
+        if not frame_available:
+            print(f"Erreur de lecture de la première frame de {self.input_video_filename}")
+            video_file.release()
+            sys.exit()
+        # Copy de la frame pour autre usage
+        frame=np.array(first_frame)
+        debut_echantillonnage = 0
+
+        self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_echantillonnage)
+
+        # print("Carte des vitesses moyennes intégrées")
+        # self.tracer_carte_vitesses_integrees_video_totale(nouvel_array_moyenne_high_res)
 
 
 def main():
 
 
-    start_time = time.time()
-    now = datetime.datetime.now()
-    print('##############################################################################')
-    print(f'{now} Start')
+    #  analysis == tru of the file
+    #part 2 = interpolation of the file from results
+    analysis = True
 
-
-    # part = 1 for video treatment
-    # part = 2 for moyennage // interpolation
-    part = 1
+    # nb of CPU to use
+    cpu_nb = cpu_count()
 
     root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
     numeros_des_lignes_a_traiter = [11]
+    numero_ligne_a_traiter = 11
 
     duree_fenetre_analyse_seconde = 5
     # Get parameters from a shared google sheet
-    # Load secrets from .env
-    load_dotenv()
-    #csv_input_parameters_file = 'parametres.csv'
+    load_dotenv() # Load secrets from .env
     google_sheet_id = os.getenv("GG_SHEET_ID")
     if google_sheet_id is None:
         print('Id of google sheet is required to process data')
         print('in the .env file')
         print('ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF')
-    #for numero_ligne in range(0,10) :
-    for numero_ligne in numeros_des_lignes_a_traiter :
-        dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne,
-                                       root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
-                                       DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=False)
-        # Get data from video file
-        dziani_bullage.get_video_data()
 
-        # modifier la longueur d'analyse du fichier.
-        dziani_bullage.movie_length_seconds = 15
+    dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,
+                                    root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
+                                    DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=False,cpu_nb=cpu_nb)
+    # Get data from video file
+    dziani_bullage.get_video_data()
 
-        if part == 1:
+    # modifier la longueur d'analyse du fichier.
+    dziani_bullage.movie_length_seconds = 15
+
+    if analysis :
+        dziani_bullage.video_file_analysis()
+        dziani_bullage.save_results_pickle()
+
+
+    dziani_bullage.load_results_pickle()
+    #dziani_bullage.interpolation()
 
 
 
-            # nb of CPU to use
-            cpu_nb = cpu_count()
-            print("Working on the video file ")
-            array_arguments_for_calculer_vitesse_bulles =  list(range(0, dziani_bullage.movie_length_seconds - dziani_bullage.window_size_seconds, dziani_bullage.windows_shift_seconds))
 
-            with Pool(processes=cpu_nb) as pool:
-                # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
-                #  de la array_arguments_for_calculer_vitesse_bulles
-                results_local=pool.map(dziani_bullage.calculer_vitesse_bulles, array_arguments_for_calculer_vitesse_bulles)
-
-            dziani_bullage.results = results_local
-            # On sauve les resultats
-            #dziani_bullage.save_results()
-
-            #print("Résultats:")
-            print(dziani_bullage.results)
-
-            fin_traitement_video = time.time()
-            now_fin_traitement_video = datetime.datetime.now()
-            print(f'{now_fin_traitement_video} fin traitement_fichier video ')
-            print('##############################################################################')
-            print(f'duree  {fin_traitement_video - start_time}')
-            print("Working on the data ")
-
-            #dziani_bullage.moyennage_part_2()
-
-        elif part == 2 :
-            print("Working on the data ")
-            #dziani_bullage.moyennage_part_2()
-            dziani_bullage.interpolation()
 
 
 
