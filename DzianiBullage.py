@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 from icecream import ic
 from tqdm import trange
 import pickle
-
+from scipy import ndimage
 
 
 @dataclass
@@ -269,90 +269,6 @@ class DzianiBullage:
             plt.show()
 
 
-
-    def tracer_carte_vitesses_interpolees(self, frame, masked_speeds, debut_echantillonnage):
-
-        """
-        Trace une carte des vitesses interpolées avec une échelle de couleurs
-        """
-        # Calcul de l'aire d'un pixel en mètres carrés
-        dimension_pixel_grille_m2 = (self.gsd_hauteur * 100) ** 2
-
-        # Dimensions de l'image pour l'affichage
-        largeur_pixel_carte_interpolee = frame.shape[1] // 100
-        hauteur_pixel_carte_interpolee = frame.shape[0] // 100
-
-        # Création de la figure et affichage des vitesses interpolées
-        plt.figure(figsize=(10, 10))
-        normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)
-        plt.imshow(masked_speeds.T, extent=(0, largeur_pixel_carte_interpolee, hauteur_pixel_carte_interpolee, 0), origin='upper', cmap=self.colormap, norm=normalisation)
-        echelle_color_bar = plt.colorbar()
-        echelle_color_bar.set_label('Vitesse (m/s)')
-        plt.title(f"Carte des vitesses interpolées\n{self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s")
-
-
-        # Ajout de l'échelle sur le graphique
-        position_x_pixel_legende = 30
-        position_y_pixel_legende = 18  # Positionner le carré plus bas
-        taille_pixel_legende = 1  #avec dans l'échelle de la carte interpolée
-
-        # Ajouter un carré représentant un pixel
-        pixel_legende = patches.Rectangle((position_x_pixel_legende, position_y_pixel_legende),
-                                        taille_pixel_legende, taille_pixel_legende, linewidth=0, edgecolor='white', facecolor='red')
-        plt.gca().add_patch(pixel_legende)
-
-        # Ajout de l'échelle sur le graphique
-        legend_text = f"{dimension_pixel_grille_m2:.2f} m²"
-        plt.text(position_x_pixel_legende + 0.02, position_y_pixel_legende - 0.02 * hauteur_pixel_carte_interpolee,
-                legend_text, color='black', fontsize=8, fontweight='bold')
-
-
-        if self.SAVE_PLOTS :
-            filename = f'Carte_des_vitesses_interpolees_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
-            filepath = os.path.join(self.output_path, filename)
-            plt.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
-
-        if self.DISPLAY_PLOTS:
-            plt.show()
-
-
-
-    def tracer_carte_vitesses_integrees_video_totale(self,nouvel_array_moyenne_high_res):
-        # Créer une nouvelle figure avec une instance de Figure et Axes
-
-        fig, ax = plt.subplots(figsize=(12, 9))
-    #    colormap = plt.get_cmap('Reds') #  Choix de la carte de couleurs
-    #    colormap.set_bad(color='white')  # Définir la couleur pour les valeurs NaN à blanc
-
-        normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)
-        im = ax.imshow(nouvel_array_moyenne_high_res, cmap=self.colormap, interpolation='bilinear',norm=normalisation)
-        ax.set_title(f"Carte des vitesses moyennes intégrées \n{self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s", fontsize=12)
-
-        #Ajout d'une échelle pour l'illustration
-        largeur_pixel_carte_interpolee, hauteur_pixel_carte_interpolee = nouvel_array_moyenne_high_res.shape[1], nouvel_array_moyenne_high_res.shape[0]
-        # Calcul de l'aire d'un pixel en mètres carrés
-        dimension_pixel_grille_m2 = (self.gsd_hauteur * 100) ** 2
-
-        # Ajout de l'échelle sur le graphique
-        position_x_pixel_legende, position_y_pixel_legende = largeur_pixel_carte_interpolee * 0.85, hauteur_pixel_carte_interpolee * 0.75
-        pixel_size_display = 1
-        pixel_legende = patches.Rectangle((position_x_pixel_legende, position_y_pixel_legende), pixel_size_display, pixel_size_display, linewidth=1, edgecolor='red', facecolor='red')
-        ax.add_patch(pixel_legende)
-        ax.text(position_x_pixel_legende - 2, position_y_pixel_legende - 1, f"{dimension_pixel_grille_m2:.2f} m²", color='black', fontsize=10, fontweight='bold')
-        # Ajouter une barre de couleur
-        echelle_color_bar=fig.colorbar(im)
-        echelle_color_bar.set_label('Vitesse (m/s)')
-
-        if self.SAVE_PLOTS :
-            # Chemin et nom du fichier pour sauvegarder
-            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.line_number}_{self.date_video}_final.png'
-            filepath = os.path.join(self.output_path, filename)
-            fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)  # Sauvegarde de la figure
-
-        # Afficher le graphique
-        if self.DISPLAY_PLOTS :
-            plt.show()
-
     def frame_to_BGR2GRAY(self,frame):
         return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -437,15 +353,11 @@ class DzianiBullage:
         masque_detection = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)  # Crée un masque de la même taille que l'image, mais en niveaux de gris
         # Dessine un cercle plein = cercle de détection sur le masque avec une valeur de 255 (blanc)
         cv2.circle(masque_detection, self.detection_center, self.detection_diameter, 255, thickness=-1)
-        # Masque pour définir le cercle d'interpolation
-        mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
-        # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
-        cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
-        # #Image avec la position des cercles de détection et d'interpolation
+
+        # #Image avec la position du cercle de détection
         if debut_echantillonnage == 0 :
                     cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
-                    cv2.circle(first_frame_copy, self.interpolation_center, self.interpolation_diameter, 255, thickness= 2)
-                    filename = f'Cercles_interpolation_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+                    filename = f'Cercle_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
                     filepath = os.path.join(self.output_path, filename)
                     cv2.imwrite(filepath, first_frame_copy)
 
@@ -626,91 +538,7 @@ class DzianiBullage:
         if debut_echantillonnage == 0 :
             self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
 
-
-        ### Calcul interpolation
-        #print(f"Calcul interpolation {debut_echantillonnage:03}")
-
-        # points = np.array(all_points)
-        # speeds = np.array(speeds_m_per_sec)
-
-
-        # # Définition de la grille pour l'interpolation
-        # grid_x, grid_y = np.mgrid[0:frame.shape[1]:100, 0:frame.shape[0]:100]
-
-        # # Interpolation des vitesses sur la grille
-        # grid_z = griddata(points, speeds, (grid_x, grid_y), method='nearest')
-
-        # masked_speeds = np.where(mask_interpolation[grid_y, grid_x], grid_z, np.nan)
-        # nan_speed_mask = np.isnan(grid_z) & (mask_interpolation[grid_y, grid_x] == 255)
-
-        # aire_pixels= np.pi * ((self.interpolation_diameter / 2) ** 2)
-        # aire_metres = aire_pixels * (self.gsd_hauteur ** 2)
-
-        # #print(f"L'aire de la zone d'interpolation est de {aire_pixels:.2f} pixels")
-        # #print(f"L'aire de la zone d'interpolation est de {aire_metres:.2f} m²")
-
-        # self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_echantillonnage)
-
-
-        # low_speed_mask = (grid_z < self.BORNE_INF_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
-        # medium_speed_mask = ((grid_z >= self.BORNE_INF_GRAPH) & (grid_z < self.BORNE_SUP_GRAPH)) & (mask_interpolation[grid_y, grid_x] == 255)
-        # high_speed_mask = (grid_z >= self.BORNE_SUP_GRAPH) & (mask_interpolation[grid_y, grid_x] == 255)
-
-        # # Calcul de l'aire en pixels pour chaque classe
-        # low_speed_area_pixels = np.sum(low_speed_mask)
-        # medium_speed_area_pixels = np.sum(medium_speed_mask)
-        # high_speed_area_pixels = np.sum(high_speed_mask)
-
-        # mask_active_pixels = np.sum(mask_interpolation[grid_y, grid_x] == 255)
-
-        # # Conversion en mètres carrés en utilisant le GSD
-        # low_speed_area_m2_grille = (low_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
-        # medium_speed_area_m2_grille = (medium_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
-        # high_speed_area_m2_grille = (high_speed_area_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
-
-        # mask_area_m2 = (mask_active_pixels * (aire_pixels/mask_active_pixels)) * (self.gsd_hauteur ** 2)
-
-        #print(f"Aire des faibles vitesses: {low_speed_area_m2_grille:.2f} m²")
-        #print(f"Aire des vitesses moyennes: {medium_speed_area_m2_grille:.2f} m²")
-        #print(f"Aire des hautes vitesses: {high_speed_area_m2_grille:.2f} m²")
-        #print(f"Aire du masque d'interpolation: {mask_area_m2:.2f} m²")
-
-
-    #     data_to_save = {
-    #     'grid_x': grid_x.tolist(),
-    #     'grid_y': grid_y.tolist(),
-    #     'grid_z': grid_z.tolist(),
-    #     'masked_speeds': masked_speeds.tolist()
-    # }
-    #     data_filepath = os.path.join(self.output_path, f'donnees_interpolees_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.json')
-
-    #     data_to_save = {
-    #     'points': points.tolist(),
-    #     'Speeds': speeds.tolist(),
-    # }
-        # data_filepath = os.path.join(self.output_path, f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.json')
-
-        #Définir une variable globale = tableau des vitesses en fonction de leur posisition
-        #nom_table_vitesse_2 = f'donnees_vitesses_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}'
-        #globals ()[nom_table_vitesse_2] = data_to_save
-
-        # # Sauvegarde en JSON
-        # with open(data_filepath, 'w') as json_file:
-        #     json.dump(data_to_save, json_file)
-
-        #print(f"Les données interpolées ont été sauvegardées dans le fichier {data_filepath}")
-
-
-        #print(f'Fin calculer_vitesse_bulles for offset {debut_echantillonnage:03}')
-
-
-        #return [ debut_echantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
-        #self.results.append([ debut_echantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille])
-        #print(self.results)
-        #if points:
-        #    self.all_points.append(debut_echantillonnage, points) # Liste pour stocker tous les points de trajectoire
         return [all_points,speeds_m_per_sec]
-        #return [ debut_echantillonnage, low_speed_area_m2_grille, medium_speed_area_m2_grille, high_speed_area_m2_grille]
 
 
     def video_file_analysis(self):
@@ -774,36 +602,117 @@ class DzianiBullage:
         positions_X = np.array(positions_X)
         positions_Y = np.array(positions_Y)
         speeds = np.array(speeds)
+        
+        
+                
+        ##Echantillonnage des données pour l'interpolation en fonction de la densité des points
+        # Découper l'image en cellules d'échantillonnage
+        x_min, x_max = np.min(positions_X), np.max(positions_X)
+        y_min, y_max = np.min(positions_Y), np.max(positions_Y)
+        num_cells = 100  # Ajuster ce paramètre pour plus ou moins de cellules
+        x_edges = np.linspace(x_min, x_max, num_cells + 1)
+        y_edges = np.linspace(y_min, y_max, num_cells + 1)
 
-        # Création d'une grille pour l'interpolation
-        grid_X, grid_Y = np.meshgrid(np.linspace(min(positions_X), max(positions_Y), 100), np.linspace(min(positions_X), max(positions_Y), 100))
+        # Liste pour stocker les points échantillonnés
+        sampled_positions_X = []
+        sampled_positions_Y = []
+        sampled_speeds = []
 
-        # Interpolation des vitesses sur la grille
-        grid_speeds = griddata((positions_X, positions_Y), speeds, (grid_X, grid_Y), method='linear', rescale = True)
+        # Calculer la densité des points dans chaque cellule
+        density, _, _ = np.histogram2d(positions_X, positions_Y, bins=[x_edges, y_edges])
 
-        # Masque pour définir le cercle d'interpolation
-        mask_interpolation = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)
-        # Dessine un cercle plein = cercle d'interpolation sur le masque avec une valeur de 255 (blanc)
-        cv2.circle(mask_interpolation, self.interpolation_center, self.interpolation_diameter, 255, -1)
+        # Définir un nombre cible et un nombre max de points à échantillonner
+        total_points = len(positions_X)
+        target_density = total_points / (num_cells ** 2) #nombre cible
+        max_sample_size = int(np.ceil(target_density / 1000) * 1000)  #nombre max = nombre cible arrondi au millier supérieur
 
-        masked_speeds = np.where(mask_interpolation[grid_Y, grid_X], grid_speeds, np.nan)
-        # nan_speed_mask = np.isnan(grid_speeds) & (mask_interpolation[grid_Y, grid_X] == 255)
+        # Parcourir chaque cellule
+        for i in range(len(x_edges) - 1):
+            for j in range(len(y_edges) - 1):
+                # Définir les limites de la cellule
+                x_lower, x_upper = x_edges[i], x_edges[i + 1]
+                y_lower, y_upper = y_edges[j], y_edges[j + 1]
+                
+                # Trouver les points dans la cellule actuelle
+                mask = (positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper)
+                
+                # Trouver les points dans la cellule
+                cell_positions_X = positions_X[mask]
+                cell_positions_Y = positions_Y[mask]
+                cell_speeds = speeds[mask]
+                
+                # Déterminer le facteur d'échantillonnage
+                cell_density = density[i, j]
+                if cell_density > 0:
+                    # Ajuster le nombre de points échantillonnés proportionnellement à la densité
+                    sample_size = min(max_sample_size, max(1, int(target_density / (cell_density / np.mean(density) + 1))))
+                    if len(cell_positions_X) > sample_size:
+                        indices = np.random.choice(len(cell_positions_X), size=sample_size, replace=False)
+                        sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X[indices]))
+                        sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y[indices]))
+                        sampled_speeds = np.concatenate((sampled_speeds, cell_speeds[indices]))
+                    else:
+                        sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X))
+                        sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y))
+                        sampled_speeds = np.concatenate((sampled_speeds, cell_speeds))
+            
+        # Créer une carte des points échantillonnés à interpoler en gradient de couleur
+        fig, ax = plt.subplots(figsize=(10, 8))
+        # Tracer les points avec une colormap pour les vitesses
+        sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=10, edgecolor='none')
+        plt.colorbar(sc, ax=ax, label='Speed')
+        plt.gca().invert_yaxis()
+        # Ajouter des étiquettes et un titre
+        ax.set_xlabel('X Position')
+        ax.set_ylabel('Y Position')
+        ax.set_title('Scatter Plot of sampled_positions with Speed Colormap')
+        # Ajuster les limites des axes si nécessaire
+        ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
+        ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
+        # Sauvegarder la figure dans un fichier spécifié
+        filename = f'Points_échantillonnés_{self.date_video}.png'
+        filepath = os.path.join(self.output_path, filename)
+        plt.savefig(filepath, dpi=300)
+        plt.close(fig)
 
-        video_file = cv2.VideoCapture(self.video_path)
-        # Lecture de la première frame et création
-        frame_available, first_frame = video_file.read()
-        if not frame_available:
-            print(f"Erreur de lecture de la première frame de {self.input_video_filename}")
-            video_file.release()
-            sys.exit()
-        # Copy de la frame pour autre usage
-        frame=np.array(first_frame)
-        debut_echantillonnage = 0
 
-        self.tracer_carte_vitesses_interpolees(frame, masked_speeds, debut_echantillonnage)
+        
+        ## Réaliser l'interpolation
+        # Créer une grille avec une résolution fixe
+        resolution_x = 200
+        resolution_y = 200
+        x = np.linspace(x_min, x_max, resolution_x)
+        y = np.linspace(y_min, y_max, resolution_y)
+        grid_X, grid_Y = np.meshgrid(x, y)
 
-        # print("Carte des vitesses moyennes intégrées")
-        # self.tracer_carte_vitesses_integrees_video_totale(nouvel_array_moyenne_high_res)
+        # Interpolation sur la grille
+        grid_speeds = griddata(
+            (sampled_positions_X, sampled_positions_Y),  # Coordonnées des points échantillonnés
+            sampled_speeds,                      # Valeurs à interpoler
+            (grid_X, grid_Y),                    # Coordonnées de la grille
+            method='linear',                     # Méthode d'interpolation
+            fill_value=np.nan                    # Valeurs à utiliser pour les points en dehors des données
+        )
+
+        # Appliquer un filtre de moyenne pour lisser le signal
+        sigma = 1.5  # Paramètre de lissage
+        smoothed_grid_speeds = ndimage.gaussian_filter(grid_speeds, sigma=sigma)
+
+        # Créer une figure du résultat de l'interpolation
+        fig, ax = plt.subplots(figsize=(10, 8))
+        plt.gca().invert_yaxis()
+        contour = ax.contourf(grid_X, grid_Y, smoothed_grid_speeds, cmap=self.colormap, levels=100, vmin=0.1, vmax=0.4)
+        cbar = plt.colorbar(contour, ax=ax, label='Speeds')
+        ax.set_xlabel('X Axis')
+        ax.set_ylabel('Y Axis')
+        ax.set_title('Interpolated Grid with Smoothing Applied')
+        # Sauvegarder l'image résultante
+        filename = f'Interpolation_{self.date_video}.png'
+        filepath = os.path.join(self.output_path, filename)
+        plt.savefig(filepath, dpi=300)
+        plt.close(fig)
+
+
 
 
 def main():
@@ -820,7 +729,7 @@ def main():
     numeros_des_lignes_a_traiter = [11]
     numero_ligne_a_traiter = 11
 
-    duree_fenetre_analyse_seconde = 5
+    duree_fenetre_analyse_seconde = 20
     # Get parameters from a shared google sheet
     load_dotenv() # Load secrets from .env
     google_sheet_id = os.getenv("GG_SHEET_ID")
@@ -836,7 +745,7 @@ def main():
     dziani_bullage.get_video_data()
 
     # modifier la longueur d'analyse du fichier.
-    dziani_bullage.movie_length_seconds = 15
+    dziani_bullage.movie_length_seconds = 300
 
     if analysis :
         dziani_bullage.video_file_analysis()
