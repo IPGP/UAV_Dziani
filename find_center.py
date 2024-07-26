@@ -118,7 +118,8 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
 
     # Boucle de traitement pour chaque frame jusqu'à atteindre frames_per_window
     t = trange(FRAMES_TO_COMPUTE, desc=f'{decalage:03} frame analysis ',
-               position=numero_decalage,
+               position=numero_decalage,        leave=True,                # the progress bar will be cleared up and the cursor position unchanged when finished
+
                colour=colors.rgb2hex(table_colors[numero_decalage]))
 
 #    for frame_count in range(FRAMES_TO_COMPUTE):
@@ -199,33 +200,46 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
 
         #plt.show()
 
+    AFFICHAGE_TRAJETS = False
+
     masque_suivi = np.zeros_like(frame)
     trajets_longs={}
     for key, value in distances_totales.items():
         if value < seuils_classes_distances[0]:
             #Cyan
             color = (0,255,255)
-        elif distances_totales[key] >  seuils_classes_distances[0]  and distances_totales[key] <  seuils_classes_distances[1]:
-            # Rose
+            if AFFICHAGE_TRAJETS :
+                for point in trajets[key] :
+                    x_new_point, y_new_point = point.ravel()
+                    cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color , -1)
+
+        if distances_totales[key] >  seuils_classes_distances[0]  and distances_totales[key] <  seuils_classes_distances[1]:
+            # Fushia
             color = (255,0,255)
+            if AFFICHAGE_TRAJETS :
+                for point in trajets[key] :
+                    x_new_point, y_new_point = point.ravel()
+                    #cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color , -1)
+
         elif distances_totales[key] >  seuils_classes_distances[1]:
-            # Rouge
-            color = (255,0,0)
             trajets_longs[key]=np.array(trajets[key].copy())
-            for point in trajets[key] :
-                x_new_point, y_new_point = point.ravel()
-                #cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color , -1)
+            # Rouge
+            color = (0,0,255)
+
+            if AFFICHAGE_TRAJETS :
+                for point in trajets[key] :
+                    x_new_point, y_new_point = point.ravel()
+                    cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color , -1)
 
     # Dessine le cercle de détection sur le masque avec une valeur de 255 (blanc)
     #cv2.circle(masque_suivi, detection_center, detection_diameter, (255,255,255), thickness=20)
 
-
-    #img = cv2.add(frame, masque_suivi)
-
-    #cv2.imshow('image',masque_suivi)
-    #cv2.waitKey(0)
-    #cv2.destroyAllWindows()
-    #save_trajet(img, "vitesse.png")
+    if AFFICHAGE_TRAJETS:
+        img = cv2.add(frame, masque_suivi)
+        cv2.imshow('frame',img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+        #save_trajet(img, "vitesse.png")
 
 
     interpolations = {}
@@ -334,6 +348,7 @@ if __name__ == '__main__':
     video_file.release()
 
     seuils_classes_distances = [70 , 90] # ok pour 5,5
+#    seuils_classes_distances = [90 , 100] # ok pour 5,5
     window_size_seconds = 5
 
     windows_shift_seconds = 5
