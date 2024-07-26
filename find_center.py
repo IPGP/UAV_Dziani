@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import math
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, cpu_count, freeze_support, RLock
 import os
 import random
 import argparse
@@ -11,7 +11,7 @@ import numpy as np
 import cv2
 from matplotlib import colors
 from scipy.interpolate import griddata
-from tqdm import trange
+from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
 
 from tslearn.barycenters import \
@@ -125,7 +125,7 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
 #    for frame_count in range(FRAMES_TO_COMPUTE):
 #        print(f'{decalage:03}  {frame_count:03})')
     for frame_count in t:
-        t.set_postfix(refresh=False)
+        #t.set_postfix(refresh=False)
 
         #avant_read_frame = time.time()
         frame_available, frame = video_file.read()
@@ -311,6 +311,8 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
 
 if __name__ == '__main__':
 
+    freeze_support() # For Windows support
+
     parser = argparse.ArgumentParser(description="Trouver le centre d'un fichier vidéo.")
     parser.add_argument('video_path', type=str, help="Le chemin vers le fichier vidéo.")
 
@@ -362,7 +364,7 @@ if __name__ == '__main__':
     print(f'{cpu_nb=}')
 #    print(array_arguments_for_calcul_centre)
 
-    with Pool(processes=cpu_nb) as pool:
+    with Pool(processes=cpu_nb,initargs=(RLock(),), initializer=tqdm.set_lock) as pool:
         # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
         #  de la array_arguments_for_calculer_vitesse_bulles
         barycenters=pool.starmap(calcul_centre, array_arguments_for_calcul_centre)
