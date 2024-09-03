@@ -17,7 +17,7 @@ from matplotlib import colors, patches
 from scipy.interpolate import griddata
 from dotenv import load_dotenv
 from icecream import ic
-from tqdm import trange
+from tqdm import trange,tqdm
 import pickle
 from scipy import ndimage
 
@@ -464,9 +464,8 @@ class DzianiBullage:
 
 
             # on sauve l'image à la derniere frame pour début_echantillonnage = 0
-            if debut_echantillonnage == 0 and frame_count == frames_per_window -1:
-                if self.SAVE_PLOTS or self.DISPLAY_PLOTS :
-                    self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
+            if debut_echantillonnage == 0 and frame_count == frames_per_window -1 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
+                self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
 
             previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2 )
@@ -568,12 +567,30 @@ class DzianiBullage:
             pickle.dump(self.results_array,pickle_results_file)
 
 
+    # Function to incrementally read a pickle file with a progress bar
+    def read_pickle_in_chunks(self,file_path, chunk_size=1024):
+        file_size = os.path.getsize(file_path)
+        progress_bar = tqdm(total=file_size, unit='B', unit_scale=True, desc="Reading pickle file")
+
+        buffer = bytearray()
+        with open(file_path, 'rb') as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                buffer.extend(chunk)
+                progress_bar.update(len(chunk))
+
+        progress_bar.close()
+        return pickle.loads(buffer)
 
 
     def load_results_pickle(self):
         # Affichage des résultats pour vérification
 
-        print('Lecture des resultats en pickle')
+        print('loading  pickle results')
+
+        # self.results_array=self.read_pickle_in_chunks(self.results_pickle_filepath)
 
         with open(self.results_pickle_filepath, "rb") as pickle_results_file:   #Pickling
             self.results_array=pickle.load(pickle_results_file)
@@ -582,9 +599,12 @@ class DzianiBullage:
 
 
     def interpolation(self):
-        print(self.results_array[0])
+
+        #print(self.results_array[0])
 
         # Extraction et regroupement des données
+        print('Extraction et regroupement des données')
+
         positions_X = []
         positions_Y = []
         speeds = []
@@ -599,13 +619,16 @@ class DzianiBullage:
                 speeds.append(value)
 
         # Conversion en tableaux NumPy
+        print('Conversion en tableaux NumPy')
+
         positions_X = np.array(positions_X)
         positions_Y = np.array(positions_Y)
         speeds = np.array(speeds)
-        
-        
-                
+
+
+
         ##Echantillonnage des données pour l'interpolation en fonction de la densité des points
+        print('Echantillonnage des données pour l interpolation en fonction de la densité des points')
         # Découper l'image en cellules d'échantillonnage
         x_min, x_max = np.min(positions_X), np.max(positions_X)
         y_min, y_max = np.min(positions_Y), np.max(positions_Y)
@@ -619,28 +642,35 @@ class DzianiBullage:
         sampled_speeds = []
 
         # Calculer la densité des points dans chaque cellule
+        print(' Calculer la densité des points dans chaque cellule')
+
         density, _, _ = np.histogram2d(positions_X, positions_Y, bins=[x_edges, y_edges])
 
         # Définir un nombre cible et un nombre max de points à échantillonner
+        print(' Définir un nombre cible et un nombre max de points à échantillonner')
+
         total_points = len(positions_X)
         target_density = total_points / (num_cells ** 2) #nombre cible
         max_sample_size = int(np.ceil(target_density / 1000) * 1000)  #nombre max = nombre cible arrondi au millier supérieur
 
         # Parcourir chaque cellule
+        print(' Parcourir chaque cellule')
+        print(f'{range(len(x_edges))=}\t{range(len(y_edges))=}')
+
         for i in range(len(x_edges) - 1):
             for j in range(len(y_edges) - 1):
                 # Définir les limites de la cellule
                 x_lower, x_upper = x_edges[i], x_edges[i + 1]
                 y_lower, y_upper = y_edges[j], y_edges[j + 1]
-                
+
                 # Trouver les points dans la cellule actuelle
                 mask = (positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper)
-                
+
                 # Trouver les points dans la cellule
                 cell_positions_X = positions_X[mask]
                 cell_positions_Y = positions_Y[mask]
                 cell_speeds = speeds[mask]
-                
+
                 # Déterminer le facteur d'échantillonnage
                 cell_density = density[i, j]
                 if cell_density > 0:
@@ -655,8 +685,9 @@ class DzianiBullage:
                         sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X))
                         sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y))
                         sampled_speeds = np.concatenate((sampled_speeds, cell_speeds))
-            
+
         # Créer une carte des points échantillonnés à interpoler en gradient de couleur
+        print(' Créer une carte des points échantillonnés à interpoler en gradient de couleur')
         fig, ax = plt.subplots(figsize=(10, 8))
         # Tracer les points avec une colormap pour les vitesses
         sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=10, edgecolor='none')
@@ -676,8 +707,9 @@ class DzianiBullage:
         plt.close(fig)
 
 
-        
+
         ## Réaliser l'interpolation
+        print(' Réaliser l interpolation')
         # Créer une grille avec une résolution fixe
         resolution_x = 200
         resolution_y = 200
@@ -686,6 +718,7 @@ class DzianiBullage:
         grid_X, grid_Y = np.meshgrid(x, y)
 
         # Interpolation sur la grille
+        print(' Interpolation sur la grille')
         grid_speeds = griddata(
             (sampled_positions_X, sampled_positions_Y),  # Coordonnées des points échantillonnés
             sampled_speeds,                      # Valeurs à interpoler
@@ -695,6 +728,7 @@ class DzianiBullage:
         )
 
         # Appliquer un filtre de moyenne pour lisser le signal
+        print(' Appliquer un filtre de moyenne pour lisser le signal')
         sigma = 1.5  # Paramètre de lissage
         smoothed_grid_speeds = ndimage.gaussian_filter(grid_speeds, sigma=sigma)
 
@@ -718,9 +752,9 @@ class DzianiBullage:
 def main():
 
 
-    #  analysis == tru of the file
-    #part 2 = interpolation of the file from results
-    analysis = True
+
+    file_analysis = False
+    interpolation = True
 
     # nb of CPU to use
     cpu_nb = cpu_count()
@@ -741,19 +775,23 @@ def main():
     dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,
                                     root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
                                     DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=False,cpu_nb=cpu_nb)
+
     # Get data from video file
     dziani_bullage.get_video_data()
+    if file_analysis :
 
-    # modifier la longueur d'analyse du fichier.
-    dziani_bullage.movie_length_seconds = 300
+        # modifier la longueur d'analyse du fichier.
+        dziani_bullage.movie_length_seconds = 300
 
-    if analysis :
         dziani_bullage.video_file_analysis()
         dziani_bullage.save_results_pickle()
 
-
-    dziani_bullage.load_results_pickle()
-    #dziani_bullage.interpolation()
+    if interpolation :
+        print("############################")
+        print("##### INTERPOLATION #######")
+        print("############################")
+        dziani_bullage.load_results_pickle()
+        dziani_bullage.interpolation()
 
 
 
