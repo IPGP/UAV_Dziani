@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import copy
+import itertools
 import os
 import sys
 import datetime
@@ -20,7 +21,7 @@ from icecream import ic
 from tqdm import trange,tqdm
 import pickle
 from scipy import ndimage
-
+from codetiming import Timer
 
 @dataclass
 class DzianiBullage:
@@ -590,10 +591,12 @@ class DzianiBullage:
 
         print('loading  pickle results')
 
-        # self.results_array=self.read_pickle_in_chunks(self.results_pickle_filepath)
+        self.results_array=self.read_pickle_in_chunks(self.results_pickle_filepath)
 
-        with open(self.results_pickle_filepath, "rb") as pickle_results_file:   #Pickling
-            self.results_array=pickle.load(pickle_results_file)
+        #with open(self.results_pickle_filepath, "rb") as pickle_results_file:   #Pickling
+        #    self.results_array=pickle.load(pickle_results_file)
+
+        print('pickle loaded')
 
 
 
@@ -603,62 +606,56 @@ class DzianiBullage:
         #print(self.results_array[0])
 
         # Extraction et regroupement des données
-        print('Extraction et regroupement des données')
+        with Timer(text="{name}: {:.4f} seconds", name="Extraction et regroupement des données"):
+            positions_X = []
+            positions_Y = []
+            speeds = []
 
-        positions_X = []
-        positions_Y = []
-        speeds = []
+            for item in self.results_array:
+                arrays = item[0]
+                values = item[1]
 
-        for item in self.results_array:
-            arrays = item[0]
-            values = item[1]
-
-            for arr, value in zip(arrays, values):
-                positions_X.append(arr[0])
-                positions_Y.append(arr[1])
-                speeds.append(value)
+                for arr, value in zip(arrays, values):
+                    positions_X.append(arr[0])
+                    positions_Y.append(arr[1])
+                    speeds.append(value)
 
         # Conversion en tableaux NumPy
-        print('Conversion en tableaux NumPy')
-
-        positions_X = np.array(positions_X)
-        positions_Y = np.array(positions_Y)
-        speeds = np.array(speeds)
+        with Timer(text="{name}: {:.4f} seconds", name="Conversion en tableaux NumPy"):
+            positions_X = np.array(positions_X)
+            positions_Y = np.array(positions_Y)
+            speeds = np.array(speeds)
 
 
 
         ##Echantillonnage des données pour l'interpolation en fonction de la densité des points
-        print('Echantillonnage des données pour l interpolation en fonction de la densité des points')
-        # Découper l'image en cellules d'échantillonnage
-        x_min, x_max = np.min(positions_X), np.max(positions_X)
-        y_min, y_max = np.min(positions_Y), np.max(positions_Y)
-        num_cells = 100  # Ajuster ce paramètre pour plus ou moins de cellules
-        x_edges = np.linspace(x_min, x_max, num_cells + 1)
-        y_edges = np.linspace(y_min, y_max, num_cells + 1)
+        with Timer(text="{name}: {:.4f} seconds", name="Echantillonnage des données pour l interpolation en fonction de la densité des points"):
+            # Découper l'image en cellules d'échantillonnage
+            x_min, x_max = np.min(positions_X), np.max(positions_X)
+            y_min, y_max = np.min(positions_Y), np.max(positions_Y)
+            num_cells = 100  # Ajuster ce paramètre pour plus ou moins de cellules
+            x_edges = np.linspace(x_min, x_max, num_cells + 1)
+            y_edges = np.linspace(y_min, y_max, num_cells + 1)
 
-        # Liste pour stocker les points échantillonnés
-        sampled_positions_X = []
-        sampled_positions_Y = []
-        sampled_speeds = []
+            # Liste pour stocker les points échantillonnés
+            sampled_positions_X = []
+            sampled_positions_Y = []
+            sampled_speeds = []
 
         # Calculer la densité des points dans chaque cellule
-        print(' Calculer la densité des points dans chaque cellule')
-
-        density, _, _ = np.histogram2d(positions_X, positions_Y, bins=[x_edges, y_edges])
+        with Timer(text="{name}: {:.4f} seconds", name="Calculer la densité des points dans chaque cellule"):
+            density, _, _ = np.histogram2d(positions_X, positions_Y, bins=[x_edges, y_edges])
 
         # Définir un nombre cible et un nombre max de points à échantillonner
-        print(' Définir un nombre cible et un nombre max de points à échantillonner')
-
-        total_points = len(positions_X)
-        target_density = total_points / (num_cells ** 2) #nombre cible
-        max_sample_size = int(np.ceil(target_density / 1000) * 1000)  #nombre max = nombre cible arrondi au millier supérieur
+        with Timer(text="{name}: {:.4f} seconds", name="Définir un nombre cible et un nombre max de points à échantillonner"):
+            total_points = len(positions_X)
+            target_density = total_points / (num_cells ** 2) #nombre cible
+            max_sample_size = int(np.ceil(target_density / 1000) * 1000)  #nombre max = nombre cible arrondi au millier supérieur
 
         # Parcourir chaque cellule
-        print(' Parcourir chaque cellule')
-        print(f'{range(len(x_edges))=}\t{range(len(y_edges))=}')
+        with Timer(text="{name}: {:.4f} seconds", name="Parcourir chaque cellule"):
+            for i, j in itertools.product(range(len(x_edges) - 1), range(len(y_edges) - 1)):
 
-        for i in range(len(x_edges) - 1):
-            for j in range(len(y_edges) - 1):
                 # Définir les limites de la cellule
                 x_lower, x_upper = x_edges[i], x_edges[i + 1]
                 y_lower, y_upper = y_edges[j], y_edges[j + 1]
@@ -687,64 +684,64 @@ class DzianiBullage:
                         sampled_speeds = np.concatenate((sampled_speeds, cell_speeds))
 
         # Créer une carte des points échantillonnés à interpoler en gradient de couleur
-        print(' Créer une carte des points échantillonnés à interpoler en gradient de couleur')
-        fig, ax = plt.subplots(figsize=(10, 8))
-        # Tracer les points avec une colormap pour les vitesses
-        sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=10, edgecolor='none')
-        plt.colorbar(sc, ax=ax, label='Speed')
-        plt.gca().invert_yaxis()
-        # Ajouter des étiquettes et un titre
-        ax.set_xlabel('X Position')
-        ax.set_ylabel('Y Position')
-        ax.set_title('Scatter Plot of sampled_positions with Speed Colormap')
-        # Ajuster les limites des axes si nécessaire
-        ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
-        ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
-        # Sauvegarder la figure dans un fichier spécifié
-        filename = f'Points_échantillonnés_{self.date_video}.png'
-        filepath = os.path.join(self.output_path, filename)
-        plt.savefig(filepath, dpi=300)
-        plt.close(fig)
+        with Timer(text="{name}: {:.4f} seconds", name="Créer une carte des points échantillonnés à interpoler en gradient de couleur"):
+            fig, ax = plt.subplots(figsize=(10, 8))
+            # Tracer les points avec une colormap pour les vitesses
+            sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=10, edgecolor='none')
+            plt.colorbar(sc, ax=ax, label='Speed')
+            plt.gca().invert_yaxis()
+            # Ajouter des étiquettes et un titre
+            ax.set_xlabel('X Position')
+            ax.set_ylabel('Y Position')
+            ax.set_title('Scatter Plot of sampled_positions with Speed Colormap')
+            # Ajuster les limites des axes si nécessaire
+            ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
+            ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
+            # Sauvegarder la figure dans un fichier spécifié
+            filename = f'Points_échantillonnés_{self.date_video}.png'
+            filepath = os.path.join(self.output_path, filename)
+            plt.savefig(filepath, dpi=300)
+            plt.close(fig)
 
 
 
         ## Réaliser l'interpolation
-        print(' Réaliser l interpolation')
-        # Créer une grille avec une résolution fixe
-        resolution_x = 200
-        resolution_y = 200
-        x = np.linspace(x_min, x_max, resolution_x)
-        y = np.linspace(y_min, y_max, resolution_y)
-        grid_X, grid_Y = np.meshgrid(x, y)
+        with Timer(text="{name}: {:.4f} seconds", name="Réaliser l interpolation"):
+            # Créer une grille avec une résolution fixe
+            resolution_x = 200
+            resolution_y = 200
+            x = np.linspace(x_min, x_max, resolution_x)
+            y = np.linspace(y_min, y_max, resolution_y)
+            grid_X, grid_Y = np.meshgrid(x, y)
 
         # Interpolation sur la grille
-        print(' Interpolation sur la grille')
-        grid_speeds = griddata(
-            (sampled_positions_X, sampled_positions_Y),  # Coordonnées des points échantillonnés
-            sampled_speeds,                      # Valeurs à interpoler
-            (grid_X, grid_Y),                    # Coordonnées de la grille
-            method='linear',                     # Méthode d'interpolation
-            fill_value=np.nan                    # Valeurs à utiliser pour les points en dehors des données
-        )
+        with Timer(text="{name}: {:.4f} seconds", name="Interpolation sur la grille"):
+            grid_speeds = griddata(
+                (sampled_positions_X, sampled_positions_Y),  # Coordonnées des points échantillonnés
+                sampled_speeds,                      # Valeurs à interpoler
+                (grid_X, grid_Y),                    # Coordonnées de la grille
+                method='linear',                     # Méthode d'interpolation
+                fill_value=np.nan                    # Valeurs à utiliser pour les points en dehors des données
+            )
 
         # Appliquer un filtre de moyenne pour lisser le signal
-        print(' Appliquer un filtre de moyenne pour lisser le signal')
-        sigma = 1.5  # Paramètre de lissage
-        smoothed_grid_speeds = ndimage.gaussian_filter(grid_speeds, sigma=sigma)
+        with Timer(text="{name}: {:.4f} seconds", name="Appliquer un filtre de moyenne pour lisser le signal"):
+            sigma = 1.5  # Paramètre de lissage
+            smoothed_grid_speeds = ndimage.gaussian_filter(grid_speeds, sigma=sigma)
 
-        # Créer une figure du résultat de l'interpolation
-        fig, ax = plt.subplots(figsize=(10, 8))
-        plt.gca().invert_yaxis()
-        contour = ax.contourf(grid_X, grid_Y, smoothed_grid_speeds, cmap=self.colormap, levels=100, vmin=0.1, vmax=0.4)
-        cbar = plt.colorbar(contour, ax=ax, label='Speeds')
-        ax.set_xlabel('X Axis')
-        ax.set_ylabel('Y Axis')
-        ax.set_title('Interpolated Grid with Smoothing Applied')
-        # Sauvegarder l'image résultante
-        filename = f'Interpolation_{self.date_video}.png'
-        filepath = os.path.join(self.output_path, filename)
-        plt.savefig(filepath, dpi=300)
-        plt.close(fig)
+            # Créer une figure du résultat de l'interpolation
+            fig, ax = plt.subplots(figsize=(10, 8))
+            plt.gca().invert_yaxis()
+            contour = ax.contourf(grid_X, grid_Y, smoothed_grid_speeds, cmap=self.colormap, levels=100, vmin=0.1, vmax=0.4)
+            cbar = plt.colorbar(contour, ax=ax, label='Speeds')
+            ax.set_xlabel('X Axis')
+            ax.set_ylabel('Y Axis')
+            ax.set_title('Interpolated Grid with Smoothing Applied')
+            # Sauvegarder l'image résultante
+            filename = f'Interpolation_{self.date_video}.png'
+            filepath = os.path.join(self.output_path, filename)
+            plt.savefig(filepath, dpi=300)
+            plt.close(fig)
 
 
 
@@ -753,7 +750,7 @@ def main():
 
 
 
-    file_analysis = False
+    file_analysis = True
     interpolation = True
 
     # nb of CPU to use
@@ -782,16 +779,21 @@ def main():
 
         # modifier la longueur d'analyse du fichier.
         dziani_bullage.movie_length_seconds = 300
+        with Timer(text="{name}: {:.4f} seconds", name="video_file_analysis"):
+            dziani_bullage.video_file_analysis()
 
-        dziani_bullage.video_file_analysis()
-        dziani_bullage.save_results_pickle()
+        with Timer(text="{name}: {:.4f} seconds", name="save_results_pickle"):
+            dziani_bullage.save_results_pickle()
 
     if interpolation :
         print("############################")
         print("##### INTERPOLATION #######")
         print("############################")
-        dziani_bullage.load_results_pickle()
-        dziani_bullage.interpolation()
+
+        with Timer(text="{name}: {:.4f} seconds", name="load_results_pickle"):
+            dziani_bullage.load_results_pickle()
+        with Timer(text="{name}: {:.4f} seconds", name="interpolation"):
+            dziani_bullage.interpolation()
 
 
 
