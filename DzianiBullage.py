@@ -1,27 +1,24 @@
 # -*- coding: utf-8 -*-
-import copy
 import itertools
 import os
 import sys
-import datetime
 import csv
-import time
-import json
 import socket
-from multiprocessing import Pool,cpu_count
+from multiprocessing import Pool
 from dataclasses import dataclass, field
+import psutil
 import requests
 import cv2
+import pickle as cPickle
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import colors, patches
+from matplotlib import colors
 from scipy.interpolate import griddata
-from dotenv import load_dotenv
-from icecream import ic
-from tqdm import trange,tqdm
-import pickle
 from scipy import ndimage
+from dotenv import load_dotenv
+from tqdm import trange,tqdm
 from codetiming import Timer
+import numpy.ma as ma
 
 @dataclass
 class DzianiBullage:
@@ -36,6 +33,9 @@ class DzianiBullage:
     date_video : str = ""
     frames_per_second : int = 0
     total_frames : int = 0
+    frame_width  : int = 0
+    frame_height  : int = 0
+    frame_time  : float = 0
     movie_length_seconds : float = 0
 
     ## Analysis
@@ -136,7 +136,9 @@ class DzianiBullage:
         self.output_path = f'{self.line_number}_resultats_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
         self.tag_file=f'_{self.line_number}_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
         self.results_csv_filepath = os.path.join(self.output_path, f'results{self.tag_file}.csv')
-        self.results_npy_filepath = os.path.join(self.output_path, f'results{self.tag_file}.npy')
+        self.results_np_X_filepath = os.path.join(self.output_path, f'results_X_{self.tag_file}.npy')
+        self.results_np_Y_filepath = os.path.join(self.output_path, f'results_Y_{self.tag_file}.npy')
+        self.results_np_speeds_filepath = os.path.join(self.output_path, f'results_speeds_{self.tag_file}.npy')
         self.results_pickle_filepath = os.path.join(self.output_path, f'results{self.tag_file}.pkl')
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
@@ -148,8 +150,6 @@ class DzianiBullage:
         # Nom des fichiers de sorties et répertoires
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
-
-
 
         detection_area_pixels= np.pi * ((self.detection_diameter / 2) ** 2)
         detection_area_meters = detection_area_pixels * (self.gsd_hauteur ** 2)
@@ -357,10 +357,10 @@ class DzianiBullage:
 
         # #Image avec la position du cercle de détection
         if debut_echantillonnage == 0 :
-                    cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
-                    filename = f'Cercle_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
-                    filepath = os.path.join(self.output_path, filename)
-                    cv2.imwrite(filepath, first_frame_copy)
+            cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
+            filename = f'Cercle_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+            filepath = os.path.join(self.output_path, filename)
+            cv2.imwrite(filepath, first_frame_copy)
 
         # Détermination des caractéristiques de détection
         first_frame_gray = self.frame_to_BGR2GRAY(first_frame)
@@ -370,7 +370,9 @@ class DzianiBullage:
         #Définition des résultats des calculs
         distances_totales = {}  # Distances totales parcourues par chaque point
         total_times = {}  # Temps total de suivi pour chaque point
-        all_points = [] # Liste pour stocker toutes les positions X et Y des points
+        #all_points = [] # Liste pour stocker toutes les positions X et Y des points
+        all_X = [] # Liste pour stocker toutes les positions X des points
+        all_Y = [] # Liste pour stocker toutes les positions Y des points
         speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
         speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
 
@@ -391,6 +393,7 @@ class DzianiBullage:
         t=trange(frames_per_window,desc=f'{debut_echantillonnage:03} ',
                                   mininterval=status_update_seconds,
                                   position=nb_shift,
+                                  nrows=40,
                                   colour=colors.rgb2hex(table_colors[nb_shift]))
 
         #Renommage de la first frame pour l'initiation de la boucle
@@ -412,7 +415,7 @@ class DzianiBullage:
             #Calcul du flux optique pour suivre les caractéristiques d'une frame à l'autre
             frame_gray = self.frame_to_BGR2GRAY(frame)
 
-            positions_suivies, statuts,err = cv2.calcOpticalFlowPyrLK(previous_frame_gray, frame_gray, positions_initiales, None, **self.TRACKING_PARAMETERS)
+            positions_suivies, statuts,_ = cv2.calcOpticalFlowPyrLK(previous_frame_gray, frame_gray, positions_initiales, None, **self.TRACKING_PARAMETERS)
             #ic(positions_suivies)
             #ic(statuts)
             # Filtrer les bons points suivis dans la nouvelle frame
@@ -435,7 +438,10 @@ class DzianiBullage:
                 speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
                 speed_m_per_sec = speed_px_per_sec * self.gsd_hauteur  # Convertit la vitesse en m/sec
 
-                all_points.append(new)  # Stocker le point
+                #all_points.append(new)  # Stocker le point
+                all_X.append(x_new_point) # Stocker le X du point
+                all_Y.append(y_new_point) # Stocker le Y du point
+
                 speeds_m_per_sec.append(speed_m_per_sec)
                 #print(f'{speed_m_per_sec=}')
                 rayon_cercle_largeur_ligne = 2
@@ -461,7 +467,7 @@ class DzianiBullage:
                 total_times[i] += 1
 
                 #initial_positions = positions_initiales.copy()
-                initial_positions = np.array(positions_initiales)
+                #initial_positions = np.array(positions_initiales)
 
 
             # on sauve l'image à la derniere frame pour début_echantillonnage = 0
@@ -538,7 +544,8 @@ class DzianiBullage:
         if debut_echantillonnage == 0 :
             self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
 
-        return [all_points,speeds_m_per_sec]
+        #return [all_points,speeds_m_per_sec]
+        return [all_X, all_Y, speeds_m_per_sec]
 
 
     def video_file_analysis(self):
@@ -553,78 +560,85 @@ class DzianiBullage:
         self.results_array=results_local
         #print(f'results_local.shape {results_local.shape}')
         #print(f'results_array.shape {self.results_array.shape}')
+        #__import__("IPython").embed()
+
+        with Timer(text="{name}: {:.4f} seconds", name="Conversion en tableaux NumPy"):
+            self.convert_result_to_np()
+
+    def convert_result_to_np(self):
+        #taille_data_results = sum(len(item[0]) for item in self.results_array)
+        positions_X_tmp = []
+        positions_Y_tmp = []
+        speeds_tmp = []
+
+        for item in self.results_array:
+            Xs = item[0]
+            Ys = item[1]
+            values = item[2]
+
+            for X, Y, value in zip(Xs,Ys, values):
+                positions_X_tmp.append(X)
+                positions_Y_tmp.append(Y)
+                speeds_tmp.append(value)
+
+        self.np_X = np.array(positions_X_tmp)
+        self.np_Y = np.array(positions_Y_tmp)
+        self.np_speeds =np.array(speeds_tmp)
 
 
+    def save_results_numpy(self):
 
-    def save_results_pickle(self):
-        # Affichage des résultats pour vérification
+        print('Sauvegarde des resultats en numpy')
+        np.save(self.results_np_X_filepath, self.np_X )
+        np.save(self.results_np_Y_filepath, self.np_Y )
+        np.save(self.results_np_speeds_filepath, self.np_speeds )
 
-        print('Sauvegarde des resultats en pickle')
+    def load_results_numpy(self):
+        self.np_X =  np.load(self.results_np_X_filepath )
+        self.np_Y =  np.load(self.results_np_Y_filepath )
+        self.np_speeds =  np.load(self.results_np_speeds_filepath )
 
-        # Sauvegarder le tableau NumPy dans un fichier
-        #np.save('results.npy', results_array)
-
-        with open(self.results_pickle_filepath, "wb") as pickle_results_file:   #Pickling
-            pickle.dump(self.results_array,pickle_results_file)
-
-
-    # Function to incrementally read a pickle file with a progress bar
-    def read_pickle_in_chunks(self,file_path, chunk_size=1024):
-        file_size = os.path.getsize(file_path)
-        progress_bar = tqdm(total=file_size, unit='B', unit_scale=True, desc="Reading pickle file")
-
-        buffer = bytearray()
-        with open(file_path, 'rb') as f:
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                buffer.extend(chunk)
-                progress_bar.update(len(chunk))
-
-        progress_bar.close()
-        return pickle.loads(buffer)
-
-
-    def load_results_pickle(self):
-        # Affichage des résultats pour vérification
-
-        print('loading  pickle results')
-
-        self.results_array=self.read_pickle_in_chunks(self.results_pickle_filepath)
-
-        #with open(self.results_pickle_filepath, "rb") as pickle_results_file:   #Pickling
-        #    self.results_array=pickle.load(pickle_results_file)
-
-        print('pickle loaded')
 
 
 
 
     def interpolation(self):
 
-        #print(self.results_array[0])
+        # #print(self.results_array[0])
+        # taille_na_array = sum(len(item[0]) for item in self.results_array)
+        # positions_X_bis = np.array([])
+        # positions_Y_bis = np.array([])
+        # speeds_bis = np.array([])
 
-        # Extraction et regroupement des données
-        with Timer(text="{name}: {:.4f} seconds", name="Extraction et regroupement des données"):
-            positions_X = []
-            positions_Y = []
-            speeds = []
+        # for item in self.results_array:
+        #     np.concatenate(positions_X_bis,item[0])
+        #     np.concatenate(positions_X_bis,item[0])
+        #     np.concatenate(speeds_bis,item[1])
 
-            for item in self.results_array:
-                arrays = item[0]
-                values = item[1]
 
-                for arr, value in zip(arrays, values):
-                    positions_X.append(arr[0])
-                    positions_Y.append(arr[1])
-                    speeds.append(value)
+        # # Extraction et regroupement des données
+        # with Timer(text="{name}: {:.4f} seconds", name="Extraction et regroupement des données"):
+        #     positions_X = []
+        #     positions_Y = []
+        #     speeds = []
+
+        #     for item in self.results_array:
+        #         arrays = item[0]
+        #         values = item[1]
+
+        #         for arr, value in zip(arrays, values):
+        #             positions_X.append(arr[0])
+        #             positions_Y.append(arr[1])
+        #             speeds.append(value)
+
+
+
 
         # Conversion en tableaux NumPy
-        with Timer(text="{name}: {:.4f} seconds", name="Conversion en tableaux NumPy"):
-            positions_X = np.array(positions_X)
-            positions_Y = np.array(positions_Y)
-            speeds = np.array(speeds)
+        #with Timer(text="{name}: {:.4f} seconds", name="Conversion en tableaux NumPy"):
+        positions_X = self.np_X
+        positions_Y = self.np_Y
+        speeds = self.np_speeds
 
 
 
@@ -660,28 +674,52 @@ class DzianiBullage:
                 x_lower, x_upper = x_edges[i], x_edges[i + 1]
                 y_lower, y_upper = y_edges[j], y_edges[j + 1]
 
-                # Trouver les points dans la cellule actuelle
-                mask = (positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper)
+               # with Timer(text="{name}: {:.4f} seconds", name="Maskage_ori"):
+                    # Trouver les points dans la cellule actuelle
+                #    mask = (positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper)
+
+
+                #with Timer(text="{name}: {:.4f} seconds", name="Maskage_bis"):
+                    # Trouver les points dans la cellule actuelle
+                mask_2 = np.ma.where(positions_X >= x_lower,True,False) & np.ma.where(positions_X < x_upper,True,False) & np.ma.where(positions_Y >= y_lower,True,False) & np.ma.where(positions_Y < y_upper,True,False)
+                #__import__("IPython").embed()
 
                 # Trouver les points dans la cellule
-                cell_positions_X = positions_X[mask]
-                cell_positions_Y = positions_Y[mask]
-                cell_speeds = speeds[mask]
+                cell_positions_X = positions_X[mask_2]
+                cell_positions_Y = positions_Y[mask_2]
+                cell_speeds = speeds[mask_2]
+
+                #with Timer(text="{name}: {:.4f} seconds", name="B_alt"):
+                #    cell_positions_X_bis = ma.masked_where((positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper),positions_X)
+                #    cell_positions_Y_bis = ma.masked_where((positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper),positions_Y)
+                #    cell_speeds_bis = ma.masked_where((positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper),speeds)
+
+                #__import__("IPython").embed()
+
+                #print(f'{np.array_equal(cell_positions_X_bis,cell_positions_X)=}\t{np.array_equal(cell_positions_Y_bis,cell_positions_Y)=}\t{np.array_equal(cell_speeds_bis,cell_speeds)=}')
+
 
                 # Déterminer le facteur d'échantillonnage
                 cell_density = density[i, j]
+
                 if cell_density > 0:
                     # Ajuster le nombre de points échantillonnés proportionnellement à la densité
                     sample_size = min(max_sample_size, max(1, int(target_density / (cell_density / np.mean(density) + 1))))
                     if len(cell_positions_X) > sample_size:
                         indices = np.random.choice(len(cell_positions_X), size=sample_size, replace=False)
-                        sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X[indices]))
-                        sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y[indices]))
-                        sampled_speeds = np.concatenate((sampled_speeds, cell_speeds[indices]))
+                        sampled_positions_X.append((sampled_positions_X, cell_positions_X[indices]))
+                        sampled_positions_Y.append((sampled_positions_Y, cell_positions_Y[indices]))
+                        sampled_speeds.append((sampled_speeds, cell_speeds[indices]))
+                        # sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X[indices]))
+                        # sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y[indices]))
+                        # sampled_speeds = np.concatenate((sampled_speeds, cell_speeds[indices]))
                     else:
-                        sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X))
-                        sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y))
-                        sampled_speeds = np.concatenate((sampled_speeds, cell_speeds))
+                        sampled_positions_X.append((sampled_positions_X, cell_positions_X))
+                        sampled_positions_Y.append((sampled_positions_Y, cell_positions_Y))
+                        sampled_speeds.append((sampled_speeds, cell_speeds))
+                        # sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X))
+                        # sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y))
+                        # sampled_speeds = np.concatenate((sampled_speeds, cell_speeds))
 
         # Créer une carte des points échantillonnés à interpoler en gradient de couleur
         with Timer(text="{name}: {:.4f} seconds", name="Créer une carte des points échantillonnés à interpoler en gradient de couleur"):
@@ -698,7 +736,7 @@ class DzianiBullage:
             ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
             ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
             # Sauvegarder la figure dans un fichier spécifié
-            filename = f'Points_échantillonnés_{self.date_video}.png'
+            filename = f'Points_echantillonnes_{self.date_video}.png'
             filepath = os.path.join(self.output_path, filename)
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
@@ -750,11 +788,14 @@ def main():
 
 
 
-    file_analysis = True
+    file_analysis = False
     interpolation = True
 
     # nb of CPU to use
-    cpu_nb = cpu_count()
+    #cpu_nb = cpu_count()
+    cpu_nb = len(psutil.Process().cpu_affinity())
+
+    duree_fenetre_analyse_seconde = 20
 
     root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
     numeros_des_lignes_a_traiter = [11]
@@ -765,9 +806,10 @@ def main():
     load_dotenv() # Load secrets from .env
     google_sheet_id = os.getenv("GG_SHEET_ID")
     if google_sheet_id is None:
-        print('Id of google sheet is required to process data')
-        print('in the .env file')
-        print('ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF')
+        print("""
+              Id of google sheet is required to process data
+              in the .env file
+              ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF""")
 
     dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,
                                     root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
@@ -778,27 +820,30 @@ def main():
     if file_analysis :
 
         # modifier la longueur d'analyse du fichier.
-        dziani_bullage.movie_length_seconds = 300
+        #dziani_bullage.movie_length_seconds = 300
+
         with Timer(text="{name}: {:.4f} seconds", name="video_file_analysis"):
             dziani_bullage.video_file_analysis()
 
-        with Timer(text="{name}: {:.4f} seconds", name="save_results_pickle"):
-            dziani_bullage.save_results_pickle()
+        #with Timer(text="{name}: {:.4f} seconds", name="save_results_cPickle"):
+        #    dziani_bullage.save_results_pickle()
+
+        with Timer(text="{name}: {:.4f} seconds", name="save_results_numpy"):
+            dziani_bullage.save_results_numpy()
 
     if interpolation :
         print("############################")
         print("##### INTERPOLATION #######")
         print("############################")
 
-        with Timer(text="{name}: {:.4f} seconds", name="load_results_pickle"):
-            dziani_bullage.load_results_pickle()
+        # with Timer(text="{name}: {:.4f} seconds", name="load_results_cPickle"):
+        #     dziani_bullage.load_results_pickle()
+
+        with Timer(text="{name}: {:.4f} seconds", name="load_results_numpy"):
+            dziani_bullage.load_results_numpy()
+
         with Timer(text="{name}: {:.4f} seconds", name="interpolation"):
             dziani_bullage.interpolation()
-
-
-
-
-
 
 
 if __name__ == "__main__":
