@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from tqdm import trange,tqdm
 from codetiming import Timer
 import numpy.ma as ma
+import datetime
 
 @dataclass
 class DzianiBullage:
@@ -601,6 +602,41 @@ class DzianiBullage:
 
 
 
+    def process_cell(self,args):
+        i, j, x_edges, y_edges, positions_X, positions_Y, speeds, density, max_sample_size, target_density = args
+
+        # Définir les limites de la cellule
+        x_lower, x_upper = x_edges[i], x_edges[i + 1]
+        y_lower, y_upper = y_edges[j], y_edges[j + 1]
+
+        # Créer le masque
+        mask = (positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper)
+
+        # Points dans la cellule
+        cell_positions_X = positions_X[mask]
+        cell_positions_Y = positions_Y[mask]
+        cell_speeds = speeds[mask]
+
+        # Déterminer le facteur d'échantillonnage
+        cell_density = density[i, j]
+
+        sampled_X, sampled_Y, sampled_speeds = [], [], []
+
+        if cell_density > 0:
+            # Ajuster le nombre de points échantillonnés proportionnellement à la densité
+            sample_size = min(max_sample_size, max(1, int(target_density / (cell_density / np.mean(density) + 1))))
+
+            if len(cell_positions_X) > sample_size:
+                indices = np.random.choice(len(cell_positions_X), size=sample_size, replace=False)
+                sampled_X = cell_positions_X[indices]
+                sampled_Y = cell_positions_Y[indices]
+                sampled_speeds = cell_speeds[indices]
+            else:
+                sampled_X = cell_positions_X
+                sampled_Y = cell_positions_Y
+                sampled_speeds = cell_speeds
+
+        return sampled_X, sampled_Y, sampled_speeds
 
     def interpolation(self):
 
@@ -668,58 +704,24 @@ class DzianiBullage:
 
         # Parcourir chaque cellule
         with Timer(text="{name}: {:.4f} seconds", name="Parcourir chaque cellule"):
-            for i, j in itertools.product(range(len(x_edges) - 1), range(len(y_edges) - 1)):
+            args = [
+                (i, j, x_edges, y_edges, positions_X, positions_Y, speeds, density, max_sample_size, target_density)
+                for i, j in itertools.product(range(len(x_edges) - 1), range(len(y_edges) - 1))
+                ]
 
-                # Définir les limites de la cellule
-                x_lower, x_upper = x_edges[i], x_edges[i + 1]
-                y_lower, y_upper = y_edges[j], y_edges[j + 1]
+            sampled_positions_X, sampled_positions_Y, sampled_speeds = [], [], []
 
-               # with Timer(text="{name}: {:.4f} seconds", name="Maskage_ori"):
-                    # Trouver les points dans la cellule actuelle
-                #    mask = (positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper)
+            # Utilisation de Pool pour exécuter la fonction sur plusieurs cœurs
+            with Pool(self.cpu_nb) as pool:
+                results = pool.map(self.process_cell, args)
 
+            # Combiner les résultats avec np.concatenate
+            for res in results:
+                sampled_X, sampled_Y, sampled_speeds_ = res
+                sampled_positions_X = np.concatenate((sampled_positions_X, sampled_X))
+                sampled_positions_Y = np.concatenate((sampled_positions_Y, sampled_Y))
+                sampled_speeds = np.concatenate((sampled_speeds, sampled_speeds_))
 
-                #with Timer(text="{name}: {:.4f} seconds", name="Maskage_bis"):
-                    # Trouver les points dans la cellule actuelle
-                mask_2 = np.ma.where(positions_X >= x_lower,True,False) & np.ma.where(positions_X < x_upper,True,False) & np.ma.where(positions_Y >= y_lower,True,False) & np.ma.where(positions_Y < y_upper,True,False)
-                #__import__("IPython").embed()
-
-                # Trouver les points dans la cellule
-                cell_positions_X = positions_X[mask_2]
-                cell_positions_Y = positions_Y[mask_2]
-                cell_speeds = speeds[mask_2]
-
-                #with Timer(text="{name}: {:.4f} seconds", name="B_alt"):
-                #    cell_positions_X_bis = ma.masked_where((positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper),positions_X)
-                #    cell_positions_Y_bis = ma.masked_where((positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper),positions_Y)
-                #    cell_speeds_bis = ma.masked_where((positions_X >= x_lower) & (positions_X < x_upper) & (positions_Y >= y_lower) & (positions_Y < y_upper),speeds)
-
-                #__import__("IPython").embed()
-
-                #print(f'{np.array_equal(cell_positions_X_bis,cell_positions_X)=}\t{np.array_equal(cell_positions_Y_bis,cell_positions_Y)=}\t{np.array_equal(cell_speeds_bis,cell_speeds)=}')
-
-
-                # Déterminer le facteur d'échantillonnage
-                cell_density = density[i, j]
-
-                if cell_density > 0:
-                    # Ajuster le nombre de points échantillonnés proportionnellement à la densité
-                    sample_size = min(max_sample_size, max(1, int(target_density / (cell_density / np.mean(density) + 1))))
-                    if len(cell_positions_X) > sample_size:
-                        indices = np.random.choice(len(cell_positions_X), size=sample_size, replace=False)
-                        sampled_positions_X.append((sampled_positions_X, cell_positions_X[indices]))
-                        sampled_positions_Y.append((sampled_positions_Y, cell_positions_Y[indices]))
-                        sampled_speeds.append((sampled_speeds, cell_speeds[indices]))
-                        # sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X[indices]))
-                        # sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y[indices]))
-                        # sampled_speeds = np.concatenate((sampled_speeds, cell_speeds[indices]))
-                    else:
-                        sampled_positions_X.append((sampled_positions_X, cell_positions_X))
-                        sampled_positions_Y.append((sampled_positions_Y, cell_positions_Y))
-                        sampled_speeds.append((sampled_speeds, cell_speeds))
-                        # sampled_positions_X = np.concatenate((sampled_positions_X, cell_positions_X))
-                        # sampled_positions_Y = np.concatenate((sampled_positions_Y, cell_positions_Y))
-                        # sampled_speeds = np.concatenate((sampled_speeds, cell_speeds))
 
         # Créer une carte des points échantillonnés à interpoler en gradient de couleur
         with Timer(text="{name}: {:.4f} seconds", name="Créer une carte des points échantillonnés à interpoler en gradient de couleur"):
@@ -788,6 +790,7 @@ def main():
 
 
 
+    print(datetime.datetime.now())
     file_analysis = False
     interpolation = True
 
@@ -839,8 +842,12 @@ def main():
         # with Timer(text="{name}: {:.4f} seconds", name="load_results_cPickle"):
         #     dziani_bullage.load_results_pickle()
 
+        print(datetime.datetime.now())
+
         with Timer(text="{name}: {:.4f} seconds", name="load_results_numpy"):
             dziani_bullage.load_results_numpy()
+
+        print(datetime.datetime.now())
 
         with Timer(text="{name}: {:.4f} seconds", name="interpolation"):
             dziani_bullage.interpolation()
