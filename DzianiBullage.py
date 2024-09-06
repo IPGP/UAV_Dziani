@@ -640,45 +640,15 @@ class DzianiBullage:
 
     def interpolation(self):
 
-        # #print(self.results_array[0])
-        # taille_na_array = sum(len(item[0]) for item in self.results_array)
-        # positions_X_bis = np.array([])
-        # positions_Y_bis = np.array([])
-        # speeds_bis = np.array([])
 
-        # for item in self.results_array:
-        #     np.concatenate(positions_X_bis,item[0])
-        #     np.concatenate(positions_X_bis,item[0])
-        #     np.concatenate(speeds_bis,item[1])
-
-
-        # # Extraction et regroupement des données
-        # with Timer(text="{name}: {:.4f} seconds", name="Extraction et regroupement des données"):
-        #     positions_X = []
-        #     positions_Y = []
-        #     speeds = []
-
-        #     for item in self.results_array:
-        #         arrays = item[0]
-        #         values = item[1]
-
-        #         for arr, value in zip(arrays, values):
-        #             positions_X.append(arr[0])
-        #             positions_Y.append(arr[1])
-        #             speeds.append(value)
-
-
-
-
-        # Conversion en tableaux NumPy
-        #with Timer(text="{name}: {:.4f} seconds", name="Conversion en tableaux NumPy"):
+        # Récupéation des datas
         positions_X = self.np_X
         positions_Y = self.np_Y
         speeds = self.np_speeds
 
 
 
-        ##Echantillonnage des données pour l'interpolation en fonction de la densité des points
+        ## Echantillonnage des données pour l'interpolation en fonction de la densité des points
         with Timer(text="{name}: {:.4f} seconds", name="Echantillonnage des données pour l interpolation en fonction de la densité des points"):
             # Découper l'image en cellules d'échantillonnage
             x_min, x_max = np.min(positions_X), np.max(positions_X)
@@ -738,8 +708,7 @@ class DzianiBullage:
             ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
             ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
             # Sauvegarder la figure dans un fichier spécifié
-            filename = f'Points_echantillonnes_{self.date_video}.png'
-            filepath = os.path.join(self.output_path, filename)
+            filepath = os.path.join(self.output_path, f'Points_echantillonnes_{self.date_video}.png')
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
 
@@ -777,9 +746,9 @@ class DzianiBullage:
             ax.set_xlabel('X Axis')
             ax.set_ylabel('Y Axis')
             ax.set_title('Interpolated Grid with Smoothing Applied')
+
             # Sauvegarder l'image résultante
-            filename = f'Interpolation_{self.date_video}.png'
-            filepath = os.path.join(self.output_path, filename)
+            filepath = os.path.join(self.output_path,  f'Interpolation_{self.date_video}.png')
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
 
@@ -851,6 +820,8 @@ def main():
 
         with Timer(text="{name}: {:.4f} seconds", name="interpolation"):
             dziani_bullage.interpolation()
+
+        print(datetime.datetime.now())
 
 
 if __name__ == "__main__":
