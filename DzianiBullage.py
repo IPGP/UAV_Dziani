@@ -100,7 +100,7 @@ class DzianiBullage:
 
             # Vérifier que les colonnes nécessaires sont présentes
                 # Définir les nouvelles colonnes requises
-            colonnes_requises = ['VIDEO_PATH','numero','commentaires',
+            colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires',
                                  'VITESSE_MAX_CLASSES_VITESSES',
                                  'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
                                  'DIAMETRE_INTERPOLATION', 'aire_detection_m2',

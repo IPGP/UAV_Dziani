@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+import csv
 import math
 from multiprocessing import Pool, cpu_count, freeze_support, RLock
 import os
 import random
 import argparse
+import socket
 import sys
 from dataclasses import dataclass, field
+from dotenv import load_dotenv
 import numpy as np
 import cv2
 from matplotlib import colors
+import psutil
+import requests
 from scipy.interpolate import griddata
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
@@ -26,10 +31,11 @@ from tslearn.datasets import CachedDatasets
 
 NB_POINTS: int = 5000
 
+SHOW_IMAGES = False
+SAVE_PLOTS = True
 
 rayon_cercle_largeur_ligne = 1
 
-SAVE_PLOTS = True
 
 output_path='./'
 
@@ -263,11 +269,7 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
 
         i=i+1
 
-
-
-
     # find intersections
-
 
     # On garde un nb pair de solutions
     if len(trajets_coefs_all) %2 !=0:
@@ -309,33 +311,63 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
     #print(f'{decalage:03} calcul barycentre')
     return euclidean_barycenter(filtered_solutions)
 
-if __name__ == '__main__':
+def get_file_names_from_google(google_sheet_id,root_path):
 
-    freeze_support() # For Windows support
-
-    parser = argparse.ArgumentParser(description="Trouver le centre d'un fichier vidéo.")
-    parser.add_argument('video_path', type=str, help="Le chemin vers le fichier vidéo.")
-
-    args = parser.parse_args()
-
-    video_path = args.video_path
-
-    # Vérifier si le fichier existe
-    if not os.path.isfile(video_path):
-        print(f"Erreur: Le fichier {video_path} n'existe pas.")
+    video_paths=[]
+    print(f'google_sheet_id {google_sheet_id}')
+    url = f'https://docs.google.com/spreadsheets/d/{google_sheet_id}/export?format=csv'
+    response = requests.get(url)
+    if response.status_code == 200:
+        decoded_content = response.content.decode('utf-8')
+        CSV_DATA = csv.DictReader(decoded_content.splitlines(), delimiter=',')
+    else :
+        print(f"Google sheet \n{url} is not available")
         sys.exit()
 
+    colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires',
+                            'VITESSE_MAX_CLASSES_VITESSES',
+                            'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
+                            'DIAMETRE_INTERPOLATION', 'aire_detection_m2',
+                            'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
+                            'CENTRE_INTERPOLATION']
 
-    # Traiter le fichier vidéo (par exemple, afficher son chemin)
-    print(f"Le fichier vidéo à traiter est : {video_path}")
+    for column in colonnes_requises:
+        if column not in CSV_DATA.fieldnames:
+            raise ValueError(f"{column} is missing in the google sheet or in the csv file.")
+
+    # Lire les données jusqu'à la ligne spécifique
+    for ligne in CSV_DATA:
+        donnees = ligne
+        date_video = donnees['DATE_VIDEO']
+        numero = donnees['NUMERO']
+        video_path= root_path+donnees['VIDEO_PATH']
+        if numero :
+            numero = int(numero)
+            video_paths.append((video_path,date_video,numero))
+
+    return video_paths
+
+
+def compute_center(video_data,save_figs_path):
+    video_path,date_video, numero = video_data
+    input_video_filename = os.path.basename(video_path)
+
+    print(f'Computing {input_video_filename}')
+
+    full_video_path= video_path
+    # Vérifier si le fichier existe
+    if not os.path.isfile(full_video_path):
+        print(f"Erreur: Le fichier {full_video_path} n'existe pas.")
+        sys.exit()
 
     liste_centres=[]
 
-    video_file = cv2.VideoCapture(video_path)
+    video_file = cv2.VideoCapture(full_video_path)
     if not video_file.isOpened():
-        print(f"Error while opening video file {video_path}")
-        sys.exit()
-
+        print('#################################################################################################')
+        print(f"Error while opening video file {full_video_path}")
+        print('#################################################################################################')
+        return
     frame_available, background_frame = video_file.read()
 
     # Obtenir le nombre total de frames
@@ -354,11 +386,11 @@ if __name__ == '__main__':
     window_size_seconds = 5
 
     windows_shift_seconds = 5
-    movie_length_seconds = 100
+    movie_length_seconds = min(movie_length_seconds, 100)
 
-    cpu_nb = cpu_count()
+    cpu_nb = len(psutil.Process().cpu_affinity())
     decalage_list = list(range(0, movie_length_seconds - window_size_seconds, windows_shift_seconds))
-    array_arguments_for_calcul_centre =  [(video_path,seuils_classes_distances, window_size_seconds, decalage,len(decalage_list), index ) for index, decalage in enumerate(decalage_list)]
+    array_arguments_for_calcul_centre =  [(full_video_path,seuils_classes_distances, window_size_seconds, decalage,len(decalage_list), index ) for index, decalage in enumerate(decalage_list)]
 
     cpu_nb = min(cpu_nb, len(decalage_list))
     print(f'{cpu_nb=}')
@@ -379,11 +411,57 @@ if __name__ == '__main__':
         #if x>0 and x< frame_width and y > 0 and y < frame_height and math.dist(center,detection_center)<800:
         if x>0 and x< frame_width and y > 0 and y < frame_height :
             filtered_centers.append(center)
-            plt.plot(x,y,color='blue', marker='o', linewidth=2, markersize=3)
+            plt.plot(x,y,color='blue', marker='o', linewidth=2, markersize=1)
 
     ultimate_center =euclidean_barycenter(filtered_centers)
 
-    print(f'ultimate_center {ultimate_center[0]},{ultimate_center[1]}')
-    plt.plot(ultimate_center[0],ultimate_center[1],color='red', marker='o', linewidth=2, markersize=7)
+    print(f'ultimate_center for {date_video} {video_path} {ultimate_center[0]},{ultimate_center[1]}')
+    if SHOW_IMAGES or SAVE_PLOTS:
+        plt.plot(ultimate_center[0],ultimate_center[1],color='red', marker='o', linewidth=2, markersize=3)
     #plt.plot(centre_sarah[0],centre_sarah[1],color='yellow', marker='o', linewidth=2, markersize=7)
-    plt.show()
+    plt.tight_layout()
+
+    if SHOW_IMAGES :
+        plt.show()
+    if SAVE_PLOTS:
+        center_fig_name=f'{save_figs_path}/{date_video}_{input_video_filename}_center.png'
+
+        plt.savefig(center_fig_name,dpi=150)
+    plt.close()
+
+    return [ultimate_center[0],ultimate_center[1]]
+
+if __name__ == '__main__':
+
+    video_paths = []
+    freeze_support() # For Windows support
+    root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
+    save_figs_path = './'
+    load_dotenv() # Load secrets from .env
+
+
+    parser = argparse.ArgumentParser(description="Trouver le centre de fichier vidéo.")
+    parser.add_argument('-v','--video_path', type=str, help="Le chemin vers le fichier vidéo.")
+
+    args = parser.parse_args()
+
+
+    google_sheet_id = os.getenv("GG_SHEET_ID")
+    if (google_sheet_id is None) & (args.video_path is None) :
+        print("""
+            Id of google sheet or file path is required to process data
+            in the .env file
+            ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF""")
+
+    if args.video_path is not None:
+        video_paths.append(args.video_path)
+    else:
+        video_datas = get_file_names_from_google(google_sheet_id,root_data_path)
+
+    for ligne in video_datas:
+        print(ligne)
+#    sys.exit()
+    results = [
+        compute_center(video_data, save_figs_path)
+        for video_data in video_datas
+    ]
