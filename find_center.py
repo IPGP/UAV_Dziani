@@ -325,11 +325,9 @@ def get_file_names_from_google(google_sheet_id,root_path):
         sys.exit()
 
     colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires',
-                            'VITESSE_MAX_CLASSES_VITESSES',
-                            'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
-                            'DIAMETRE_INTERPOLATION', 'aire_detection_m2',
-                            'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
-                            'CENTRE_INTERPOLATION']
+                        'DATE_VIDEO', 'ALTI_ABS_LAC','GSD_HAUTEUR', 'DIAMETRE_DETECTION',
+                        'DIAMETRE_INTERPOLATION', 'CENTRE_ZONE_DE_DETECTION',
+                        'CENTRE_INTERPOLATION']
 
     for column in colonnes_requises:
         if column not in CSV_DATA.fieldnames:
@@ -338,11 +336,10 @@ def get_file_names_from_google(google_sheet_id,root_path):
     # Lire les données jusqu'à la ligne spécifique
     for ligne in CSV_DATA:
         donnees = ligne
-        date_video = donnees['DATE_VIDEO']
-        numero = donnees['NUMERO']
-        video_path= root_path+donnees['VIDEO_PATH']
-        if numero :
+        if numero := donnees['NUMERO']:
             numero = int(numero)
+            date_video = donnees['DATE_VIDEO']
+            video_path= root_path+donnees['VIDEO_PATH']
             video_paths.append((video_path,date_video,numero))
 
     return video_paths
@@ -351,6 +348,9 @@ def get_file_names_from_google(google_sheet_id,root_path):
 def compute_center(video_data,save_figs_path):
     video_path,date_video, numero = video_data
     input_video_filename = os.path.basename(video_path)
+
+    # if numero >2:
+    #     return
 
     print(f'Computing {input_video_filename}')
 
@@ -429,7 +429,7 @@ def compute_center(video_data,save_figs_path):
         plt.savefig(center_fig_name,dpi=150)
     plt.close()
 
-    return [ultimate_center[0],ultimate_center[1]]
+    return (video_path,int(ultimate_center[0][0]),int(ultimate_center[1][0]))
 
 if __name__ == '__main__':
 
@@ -461,7 +461,19 @@ if __name__ == '__main__':
     for ligne in video_datas:
         print(ligne)
 #    sys.exit()
-    results = [
+    resultats = [
         compute_center(video_data, save_figs_path)
         for video_data in video_datas
     ]
+
+    # On retire des resultats les resultats nuls
+    clean_resultats =  [x for x in resultats if x is not None]
+    _#_import__("IPython").embed()
+
+    for resultat in clean_resultats:
+        a,b,c = resultat
+        print(f'{a}\t({int(b)}, {int(c)})')
+
+    for resultat in clean_resultats:
+        a,b,c = resultat
+        print(f'({b}, {c})')

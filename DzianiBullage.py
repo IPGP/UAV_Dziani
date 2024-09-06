@@ -101,10 +101,8 @@ class DzianiBullage:
             # Vérifier que les colonnes nécessaires sont présentes
                 # Définir les nouvelles colonnes requises
             colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires',
-                                 'VITESSE_MAX_CLASSES_VITESSES',
-                                 'seuil', 'DATE_VIDEO', 'GSD_HAUTEUR', 'DIAMETRE_DETECTION',
-                                 'DIAMETRE_INTERPOLATION', 'aire_detection_m2',
-                                 'aire_interpolation_m2', 'CENTRE_ZONE_DE_DETECTION',
+                                  'DATE_VIDEO', 'ALTI_ABS_LAC','GSD_HAUTEUR', 'DIAMETRE_DETECTION',
+                                 'DIAMETRE_INTERPOLATION', 'CENTRE_ZONE_DE_DETECTION',
                                  'CENTRE_INTERPOLATION']
 
             for column in colonnes_requises:
@@ -117,6 +115,7 @@ class DzianiBullage:
                         donnees = ligne
         self.video_path = self.root_data_path+donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
+        self.alti_abs_lac=donnees['ALTI_ABS_LAC']
         self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
         self.detection_diameter = int(donnees['DIAMETRE_DETECTION'])
         self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
