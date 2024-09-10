@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import csv
 import math
-from multiprocessing import Pool, cpu_count, freeze_support, RLock
+from multiprocessing import Pool, freeze_support, RLock
 import os
 import random
 import argparse

@@ -12,6 +12,8 @@ DIR="$1"
 # Types de fichiers vidéo que nous voulons vérifier
 VIDEO_EXTENSIONS=("mp4" "mkv" "avi" "mpeg" "mov")
 
+
+
 # Fonction pour vérifier l'existence des sous-titres et les extraire si nécessaire
 extract_subtitles() {
   local file="$1"
