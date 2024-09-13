@@ -324,10 +324,10 @@ def get_file_names_from_google(google_sheet_id,root_path):
         print(f"Google sheet \n{url} is not available")
         sys.exit()
 
-    colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires',
-                        'DATE_VIDEO', 'ALTI_ABS_LAC','GSD_HAUTEUR', 'DIAMETRE_DETECTION',
-                        'DIAMETRE_INTERPOLATION', 'CENTRE_ZONE_DE_DETECTION',
-                        'CENTRE_INTERPOLATION']
+    colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires','VITESSE_MAX_CLASSES_VITESSES',
+                                'DATE_VIDEO', 'ALTI_ABS_LAC','ALTI_ABS_DRONE','SENSOR_SIZE',
+                                'GSD_HAUTEUR', 'DIAMETRE_DETECTION','DIAMETRE_INTERPOLATION',
+                                'CENTRE_ZONE_DE_DETECTION', 'CENTRE_INTERPOLATION']
 
     for column in colonnes_requises:
         if column not in CSV_DATA.fieldnames:

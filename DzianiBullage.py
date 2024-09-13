@@ -4,7 +4,7 @@ import os
 import sys
 import csv
 import socket
-from multiprocessing import Pool
+from multiprocessing import Pool, cpu_count
 from dataclasses import dataclass, field
 import psutil
 import requests
@@ -38,13 +38,15 @@ class DzianiBullage:
     frame_height  : int = 0
     frame_time  : float = 0
     movie_length_seconds : float = 0
+    ALTI_ABS_LAC : float = 0
+    ALTI_ABS_DRONE : float = 0
+    GSD_Calcul : float = 0
 
     ## Analysis
     gsd_hauteur : float = 0
     detection_diameter : int = 0
     interpolation_diameter: int = 0
     detection_center : tuple  = None
-    interpolation_center: tuple = None
     colormap =  plt.cm.rainbow
     input_video_filename : str = ""
     output_path : str = ""
@@ -100,10 +102,10 @@ class DzianiBullage:
 
             # Vérifier que les colonnes nécessaires sont présentes
                 # Définir les nouvelles colonnes requises
-            colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires',
-                                  'DATE_VIDEO', 'ALTI_ABS_LAC','GSD_HAUTEUR', 'DIAMETRE_DETECTION',
-                                 'DIAMETRE_INTERPOLATION', 'CENTRE_ZONE_DE_DETECTION',
-                                 'CENTRE_INTERPOLATION']
+            colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires','VITESSE_MAX_CLASSES_VITESSES',
+                                'DATE_VIDEO', 'ALTI_ABS_LAC','ALTI_ABS_DRONE','SENSOR_DATA',
+                                'GSD_HAUTEUR', 'DIAMETRE_DETECTION','DIAMETRE_INTERPOLATION',
+                                'CENTRE_ZONE_DE_DETECTION', 'CENTRE_INTERPOLATION']
 
             for column in colonnes_requises:
                 if column not in CSV_DATA.fieldnames:
@@ -120,8 +122,12 @@ class DzianiBullage:
         self.detection_diameter = int(donnees['DIAMETRE_DETECTION'])
         self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
         self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
-        self.interpolation_center = eval(donnees['CENTRE_INTERPOLATION'])
-        self.VITESSE_MAX_CLASSES_VITESSES = float(donnees['VITESSE_MAX_CLASSES_VITESSES'])
+        self.alti_abs_lac = float(donnees['ALTI_ABS_LAC'])
+        self.alti_abs_drone = float(donnees['ALTI_ABS_DRONE'])
+        self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
+        # Sensor size is in mm
+        self.sensor_data = eval(donnees['SENSOR_DATA'])
+        self.GSD_Calcul = float(donnees['GSD_Calcul'])
 
         self.all_points = []
 
@@ -143,8 +149,8 @@ class DzianiBullage:
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
               f'{self.detection_diameter=}\n{self.interpolation_diameter=}\n'
-              f'{self.detection_center=}\n{self.interpolation_center=}\n'
-              f'{self.VITESSE_MAX_CLASSES_VITESSES=}\n{self.output_path}'
+              f'{self.detection_center=}\n'
+              f'{self.output_path}'
               )
 
         # Nom des fichiers de sorties et répertoires
@@ -157,6 +163,17 @@ class DzianiBullage:
         print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
 
 
+    def get_gsd(self):
+
+        #GSDh= hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
+        GSDh = self.distance_lac*self.sensor_data[0] / (self.sensor_data[2] * self.frame_height)
+        GSDw = self.distance_lac*self.sensor_data[1] / (self.sensor_data[2] * self.frame_width)
+        print(f'{GSDh}\t{GSDw}\t {min(GSDh,GSDw)}')
+        ## 36 * 8.8 / (8.8 * 3648)
+        ## 36 * 13.2 / (8.8 * 5472)
+        return min(GSDh,GSDw)
+        #hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
+        #GSDw= hauteur de vol x largeur de capteur / longueur focale x largeur de l'image.
 
 
     def speed_to_color(self,speed):
@@ -762,13 +779,22 @@ def main():
     file_analysis = False
     interpolation = True
 
-    # nb of CPU to use
-    #cpu_nb = cpu_count()
-    cpu_nb = len(psutil.Process().cpu_affinity())
 
     duree_fenetre_analyse_seconde = 20
 
-    root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
+    # Scapad
+    if 'ncpu' in socket.gethostname():
+        root_data_path = './'
+        cpu_nb = len(psutil.Process().cpu_affinity())
+    # macseb
+    elif 'mac' in socket.gethostname():
+        root_data_path = './'
+        cpu_nb = cpu_count()
+    # Windows
+    else:
+        root_data_path = 'E:/'
+        cpu_nb = cpu_count()
+
     numeros_des_lignes_a_traiter = [11]
     numero_ligne_a_traiter = 11
 
@@ -788,6 +814,8 @@ def main():
 
     # Get data from video file
     dziani_bullage.get_video_data()
+    dziani_bullage.get_gsd()
+    sys.exit()
     if file_analysis :
 
         # modifier la longueur d'analyse du fichier.
