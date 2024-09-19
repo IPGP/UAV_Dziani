@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import argparse
 import itertools
 import os
 import sys
@@ -45,7 +46,7 @@ class DzianiBullage:
     ## Analysis
     gsd_hauteur : float = 0
     detection_diameter : int = 0
-    interpolation_diameter: int = 0
+    #interpolation_diameter: int = 0
     detection_center : tuple  = None
     colormap =  plt.cm.rainbow
     input_video_filename : str = ""
@@ -120,7 +121,7 @@ class DzianiBullage:
         self.alti_abs_lac=donnees['ALTI_ABS_LAC']
         self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
         self.detection_diameter = int(donnees['DIAMETRE_DETECTION'])
-        self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
+        #self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
         self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
         self.alti_abs_lac = float(donnees['ALTI_ABS_LAC'])
         self.alti_abs_drone = float(donnees['ALTI_ABS_DRONE'])
@@ -148,7 +149,7 @@ class DzianiBullage:
         self.results_pickle_filepath = os.path.join(self.output_path, f'results{self.tag_file}.pkl')
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
-              f'{self.detection_diameter=}\n{self.interpolation_diameter=}\n'
+              f'{self.detection_diameter=}\n'
               f'{self.detection_center=}\n'
               f'{self.output_path}'
               )
@@ -168,9 +169,12 @@ class DzianiBullage:
         #GSDh= hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
         GSDh = self.distance_lac*self.sensor_data[0] / (self.sensor_data[2] * self.frame_height)
         GSDw = self.distance_lac*self.sensor_data[1] / (self.sensor_data[2] * self.frame_width)
-        print(f'{GSDh}\t{GSDw}\t {min(GSDh,GSDw)}')
+        #print(f'{GSDh}\t{GSDw}\t {min(GSDh,GSDw)}')
         ## 36 * 8.8 / (8.8 * 3648)
         ## 36 * 13.2 / (8.8 * 5472)
+        print("####################################################")
+        print(f'le GSD calculé du film {self.input_video_filename} et de numero {self.line_number}  est : {min(GSDh,GSDw)}')
+        print("####################################################")
         return min(GSDh,GSDw)
         #hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
         #GSDw= hauteur de vol x largeur de capteur / longueur focale x largeur de l'image.
@@ -773,10 +777,20 @@ class DzianiBullage:
 
 def main():
 
+    parser = argparse.ArgumentParser(description="DzianiBullage necessite le numéro de ligne a traiter comme argument.")
+
+    # Ajout de l'argument numero_ligne
+    parser.add_argument('numero_ligne', type=int, help='Le numéro de ligne à traiter qui doit être un entier.')
+
+    # Parsing des arguments
+    args = parser.parse_args()
+
+    #numeros_des_lignes_a_traiter = [11]
+    numero_ligne_a_traiter = args.numero_ligne
 
 
     print(datetime.datetime.now())
-    file_analysis = False
+    file_analysis = True
     interpolation = True
 
 
@@ -795,8 +809,7 @@ def main():
         root_data_path = 'E:/'
         cpu_nb = cpu_count()
 
-    numeros_des_lignes_a_traiter = [11]
-    numero_ligne_a_traiter = 11
+
 
     duree_fenetre_analyse_seconde = 20
     # Get parameters from a shared google sheet
@@ -807,6 +820,7 @@ def main():
               Id of google sheet is required to process data
               in the .env file
               ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF""")
+        sys.exit()
 
     dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,
                                     root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
@@ -814,8 +828,9 @@ def main():
 
     # Get data from video file
     dziani_bullage.get_video_data()
-    dziani_bullage.get_gsd()
-    sys.exit()
+    # On calcul le gsd qui devient le "bon" gsd pour la suite
+    dziani_bullage.gsd_hauteur = dziani_bullage.get_gsd()
+
     if file_analysis :
 
         # modifier la longueur d'analyse du fichier.
