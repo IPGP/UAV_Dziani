@@ -5,6 +5,7 @@ import os
 import sys
 import csv
 import socket
+from pathlib import Path
 from multiprocessing import Pool, cpu_count
 from dataclasses import dataclass, field
 import psutil
@@ -50,8 +51,8 @@ class DzianiBullage:
     detection_center : tuple  = None
     colormap =  plt.cm.rainbow
     input_video_filename : str = ""
-    output_path : str = ""
-    root_data_path : str = "./"
+    output_path : Path = ""
+    root_data_path : Path = Path("./")
 
     CELL_SIZE: int =  500
     NB_BUBBLES: int = 3000
@@ -116,7 +117,7 @@ class DzianiBullage:
                 for index, ligne in enumerate(CSV_DATA):
                     if index == self.line_number:
                         donnees = ligne
-        self.video_path = self.root_data_path+donnees['VIDEO_PATH']
+        self.video_path = self.root_data_path / donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
         self.alti_abs_lac=donnees['ALTI_ABS_LAC']
         self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
@@ -140,13 +141,13 @@ class DzianiBullage:
 
 
         self.input_video_filename = os.path.basename(self.video_path)
-        self.output_path = f'{self.line_number}_resultats_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
+        self.output_path = self.output_path  / f'{self.line_number}_resultats_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
         self.tag_file=f'_{self.line_number}_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
-        self.results_csv_filepath = os.path.join(self.output_path, f'results{self.tag_file}.csv')
-        self.results_np_X_filepath = os.path.join(self.output_path, f'results_X_{self.tag_file}.npy')
-        self.results_np_Y_filepath = os.path.join(self.output_path, f'results_Y_{self.tag_file}.npy')
-        self.results_np_speeds_filepath = os.path.join(self.output_path, f'results_speeds_{self.tag_file}.npy')
-        self.results_pickle_filepath = os.path.join(self.output_path, f'results{self.tag_file}.pkl')
+        self.results_csv_filepath = self.output_path / f'results{self.tag_file}.csv'
+        self.results_np_X_filepath = self.output_path /  f'results_X_{self.tag_file}.npy'
+        self.results_np_Y_filepath = self.output_path /  f'results_Y_{self.tag_file}.npy'
+        self.results_np_speeds_filepath = self.output_path /  f'results_speeds_{self.tag_file}.npy'
+        self.results_pickle_filepath = self.output_path /  f'results{self.tag_file}.pkl'
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
               f'{self.detection_diameter=}\n'
@@ -284,7 +285,7 @@ class DzianiBullage:
 
         if self.SAVE_PLOTS :
             filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
-            filepath = os.path.join(self.output_path, filename)
+            filepath = self.output_path /  filename
             fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
 
         if self.DISPLAY_PLOTS:
@@ -313,7 +314,7 @@ class DzianiBullage:
 
         if self.SAVE_PLOTS :
             filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
-            filepath = os.path.join(self.output_path, filename)
+            filepath = self.output_path /  filename
             cv2.imwrite(filepath, img)
 
 
@@ -380,7 +381,7 @@ class DzianiBullage:
         if debut_echantillonnage == 0 :
             cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
             filename = f'Cercle_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
-            filepath = os.path.join(self.output_path, filename)
+            filepath = self.output_path /  filename
             cv2.imwrite(filepath, first_frame_copy)
 
         # Détermination des caractéristiques de détection
@@ -728,7 +729,7 @@ class DzianiBullage:
             ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
             ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
             # Sauvegarder la figure dans un fichier spécifié
-            filepath = os.path.join(self.output_path, f'Points_echantillonnes_{self.date_video}.png')
+            filepath = self.output_path /  f'Points_echantillonnes_{self.date_video}.png'
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
 
@@ -768,7 +769,7 @@ class DzianiBullage:
             ax.set_title('Interpolated Grid with Smoothing Applied')
 
             # Sauvegarder l'image résultante
-            filepath = os.path.join(self.output_path,  f'Interpolation_{self.date_video}.png')
+            filepath = self.output_path /  f'Interpolation_{self.date_video}.png'
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
 
@@ -798,20 +799,18 @@ def main():
 
     # Scapad
     if 'ncpu' in socket.gethostname():
-        root_data_path = './'
         cpu_nb = len(psutil.Process().cpu_affinity())
     # macseb
     elif 'mac' in socket.gethostname():
-        root_data_path = './'
         cpu_nb = cpu_count()
     # Windows
     else:
-        root_data_path = 'E:/'
         cpu_nb = cpu_count()
 
 
-
     duree_fenetre_analyse_seconde = 20
+
+
     # Get parameters from a shared google sheet
     load_dotenv() # Load secrets from .env
     google_sheet_id = os.getenv("GG_SHEET_ID")
@@ -822,7 +821,30 @@ def main():
               ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF""")
         sys.exit()
 
-    dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,
+    root_data_path = os.getenv("ROOT_DATA_PATH")
+    if root_data_path is None:
+        print("""
+            Path of films directory is required to process data
+            in the .env file
+            ex linux/mac : ROOT_DATA_PATH=/data/toto
+            ex windows : ROOT_DATA_PATH=e:\\ """)
+        sys.exit()
+
+    output_path = os.getenv("OUTPUT_PATH")
+    if output_path is None:
+        print("""
+            Output path for restults directory is required to process data
+            in the .env file
+            ex linux/mac : OUTPUT_PATH=/data/results
+            ex windows : OUTPUT_PATH=e:\\results """)
+        sys.exit()
+
+
+    root_data_path = Path(root_data_path)
+    output_path = Path(output_path)
+
+
+    dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,output_path=output_path,
                                     root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
                                     DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=False,cpu_nb=cpu_nb)
 
