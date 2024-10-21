@@ -791,7 +791,8 @@ def main():
 
 
     print(datetime.datetime.now())
-    file_analysis = True
+    #file_analysis = True
+    file_analysis = False
     interpolation = True
 
 
