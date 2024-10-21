@@ -792,7 +792,7 @@ def main():
 
     print(datetime.datetime.now())
     #file_analysis = True
-    file_analysis = False
+    file_analysis = True
     interpolation = True
 
 
@@ -808,7 +808,7 @@ def main():
     else:
         cpu_nb = cpu_count()
 
-    print(f'Using {cpu_count=} CPU')
+    print(f'Using {cpu_nb=} CPU')
 
     duree_fenetre_analyse_seconde = 20
 
