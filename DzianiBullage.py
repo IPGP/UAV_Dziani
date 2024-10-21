@@ -877,8 +877,11 @@ def main():
 
         print(datetime.datetime.now())
 
-        with Timer(text="{name}: {:.4f} seconds", name="load_results_numpy"):
-            dziani_bullage.load_results_numpy()
+        # Si l'analyse n'a pas été faite lors du lancement du script
+        # il faut charger les résultats
+        if not file_analysis :
+            with Timer(text="{name}: {:.4f} seconds", name="load_results_numpy"):
+                dziani_bullage.load_results_numpy()
 
         print(datetime.datetime.now())
 
