@@ -4,9 +4,7 @@ import csv
 import math
 from multiprocessing import Pool, freeze_support, RLock
 import os
-import random
 import argparse
-import socket
 import sys
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
@@ -15,7 +13,6 @@ import numpy as np
 import cv2
 from matplotlib import colors
 import psutil
-import requests
 from scipy.interpolate import griddata
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt

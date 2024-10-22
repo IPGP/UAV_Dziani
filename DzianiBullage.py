@@ -22,6 +22,8 @@ from tqdm import trange,tqdm
 from codetiming import Timer
 import numpy.ma as ma
 import datetime
+from utils import get_data_from_google_sheet
+
 
 @dataclass
 class DzianiBullage:
@@ -92,31 +94,12 @@ class DzianiBullage:
                 CSV_DATA = csv.DictReader(fichier)
         # parametres en ligne
         elif self.google_sheet_id:
-            print(f'google_sheet_id {self.google_sheet_id}')
-            url = f'https://docs.google.com/spreadsheets/d/{self.google_sheet_id}/export?format=csv'
-            response = requests.get(url)
-            if response.status_code == 200:
-                decoded_content = response.content.decode('utf-8')
-                CSV_DATA = csv.DictReader(decoded_content.splitlines(), delimiter=',')
-            else :
-                print(f"Google sheet \n{url} is not available")
-                sys.exit()
-
-            # Vérifier que les colonnes nécessaires sont présentes
-                # Définir les nouvelles colonnes requises
-            colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires','VITESSE_MAX_CLASSES_VITESSES',
-                                'DATE_VIDEO', 'ALTI_ABS_LAC','ALTI_ABS_DRONE','SENSOR_DATA',
-                                'GSD_HAUTEUR', 'DIAMETRE_DETECTION','DIAMETRE_INTERPOLATION',
-                                'CENTRE_ZONE_DE_DETECTION', 'CENTRE_INTERPOLATION']
-
-            for column in colonnes_requises:
-                if column not in CSV_DATA.fieldnames:
-                    raise ValueError(f"{column} is missing in the google sheet or in the csv file.")
+            CSV_DATA = get_data_from_google_sheet(self.google_sheet_id)
 
         # Lire les données jusqu'à la ligne spécifique
-                for index, ligne in enumerate(CSV_DATA):
-                    if index == self.line_number:
-                        donnees = ligne
+        for index, ligne in enumerate(CSV_DATA):
+            if index == self.line_number:
+                donnees = ligne
         self.video_path = self.root_data_path / donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
         self.alti_abs_lac=donnees['ALTI_ABS_LAC']
@@ -625,6 +608,7 @@ class DzianiBullage:
 
     def process_cell(self,args):
         i, j, x_edges, y_edges, positions_X, positions_Y, speeds, density, max_sample_size, target_density = args
+        print(f'process_cell start for {i=}\t{j=}')
 
         # Définir les limites de la cellule
         x_lower, x_upper = x_edges[i], x_edges[i + 1]
@@ -657,6 +641,7 @@ class DzianiBullage:
                 sampled_Y = cell_positions_Y
                 sampled_speeds = cell_speeds
 
+        print(f'process_cell end for {i=}\t{j=}')
         return sampled_X, sampled_Y, sampled_speeds
 
     def interpolation(self):
@@ -791,8 +776,8 @@ def main():
 
 
     print(datetime.datetime.now())
-    file_analysis = False
-    #file_analysis = True
+    file_analysis = True
+    #file_analysis = False
     interpolation = True
 
 

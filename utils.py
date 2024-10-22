@@ -1,6 +1,5 @@
 import csv
 import sys
-
 import requests
 
 
@@ -24,4 +23,6 @@ def get_data_from_google_sheet(google_sheet_id):
     for column in colonnes_requises:
         if column not in CSV_DATA.fieldnames:
             raise ValueError(f"{column} is missing in the google sheet or in the csv file.")
+
+
     return CSV_DATA
