@@ -705,7 +705,7 @@ class DzianiBullage:
             # Utilisation de Pool pour exécuter la fonction sur plusieurs cœurs
             with Pool(self.cpu_nb) as pool:
                 results = pool.map(self.process_cell, args)
-
+            print("Fin results")
             # Combiner les résultats avec np.concatenate
             for res in results:
                 sampled_X, sampled_Y, sampled_speeds_ = res
@@ -791,8 +791,8 @@ def main():
 
 
     print(datetime.datetime.now())
+    file_analysis = False
     #file_analysis = True
-    file_analysis = True
     interpolation = True
 
 
@@ -835,7 +835,7 @@ def main():
     output_path = os.getenv("OUTPUT_PATH")
     if output_path is None:
         print("""
-            Output path for restults directory is required to process data
+            Output path for results directory required to process data
             in the .env file
             ex linux/mac : OUTPUT_PATH=/data/results
             ex windows : OUTPUT_PATH=e:\\results """)

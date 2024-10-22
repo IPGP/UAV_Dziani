@@ -10,6 +10,7 @@ import socket
 import sys
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
+from pathlib import Path
 import numpy as np
 import cv2
 from matplotlib import colors
@@ -25,6 +26,7 @@ from tslearn.barycenters import \
     dtw_barycenter_averaging_subgradient, \
     softdtw_barycenter
 from tslearn.datasets import CachedDatasets
+from utils import get_data_from_google_sheet
 
 #from skimage import color, data, filters, graph, measure, morphology
 
@@ -37,7 +39,6 @@ SAVE_PLOTS = True
 rayon_cercle_largeur_ligne = 1
 
 
-output_path='./'
 
 # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
 DETECTION_PARAMETERS = dict(maxCorners=NB_POINTS, qualityLevel=0.1, minDistance=0.5, blockSize=10)
@@ -311,41 +312,29 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
     #print(f'{decalage:03} calcul barycentre')
     return euclidean_barycenter(filtered_solutions)
 
-def get_file_names_from_google(google_sheet_id,root_path):
+def get_file_names_from_google(google_sheet_id,root_path,numero_ligne=None):
 
     video_paths=[]
-    print(f'google_sheet_id {google_sheet_id}')
-    url = f'https://docs.google.com/spreadsheets/d/{google_sheet_id}/export?format=csv'
-    response = requests.get(url)
-    if response.status_code == 200:
-        decoded_content = response.content.decode('utf-8')
-        CSV_DATA = csv.DictReader(decoded_content.splitlines(), delimiter=',')
-    else :
-        print(f"Google sheet \n{url} is not available")
-        sys.exit()
 
-    colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires','VITESSE_MAX_CLASSES_VITESSES',
-                                'DATE_VIDEO', 'ALTI_ABS_LAC','ALTI_ABS_DRONE','SENSOR_SIZE',
-                                'GSD_HAUTEUR', 'DIAMETRE_DETECTION','DIAMETRE_INTERPOLATION',
-                                'CENTRE_ZONE_DE_DETECTION', 'CENTRE_INTERPOLATION']
-
-    for column in colonnes_requises:
-        if column not in CSV_DATA.fieldnames:
-            raise ValueError(f"{column} is missing in the google sheet or in the csv file.")
+    CSV_DATA = get_data_from_google_sheet(google_sheet_id)
 
     # Lire les données jusqu'à la ligne spécifique
-    for ligne in CSV_DATA:
-        donnees = ligne
-        if numero := donnees['NUMERO']:
-            numero = int(numero)
+    for donnees in CSV_DATA:
+        # On arrette quand il n'y a plus de path dans la collone VIDEO_PATH
+        if donnees['VIDEO_PATH']:
+            numero = int(donnees['NUMERO'])
             date_video = donnees['DATE_VIDEO']
-            video_path= root_path+donnees['VIDEO_PATH']
-            video_paths.append((video_path,date_video,numero))
+            video_path= root_path / donnees['VIDEO_PATH']
+            #print(f'{numero=}\t{date_video=}\t{video_path}')
+            if numero_ligne is not None and numero_ligne == numero :
+                video_paths.append((video_path,date_video,numero))
+            if numero_ligne is  None :
+                video_paths.append((video_path,date_video,numero))
 
     return video_paths
 
 
-def compute_center(video_data,save_figs_path):
+def compute_center(video_data,output_path):
     video_path,date_video, numero = video_data
     input_video_filename = os.path.basename(video_path)
 
@@ -424,7 +413,7 @@ def compute_center(video_data,save_figs_path):
     if SHOW_IMAGES :
         plt.show()
     if SAVE_PLOTS:
-        center_fig_name=f'{save_figs_path}/{date_video}_{input_video_filename}_center.png'
+        center_fig_name=output_path / f'{date_video}_{input_video_filename}_center.png'
 
         plt.savefig(center_fig_name,dpi=150)
     plt.close()
@@ -433,42 +422,67 @@ def compute_center(video_data,save_figs_path):
 
 if __name__ == '__main__':
 
-    video_paths = []
+    video_datas = []
     freeze_support() # For Windows support
-    root_data_path = './' if 'ncpu' in socket.gethostname() else 'E:/'
-    save_figs_path = './'
+
+    # Get parameters from a shared google sheet
     load_dotenv() # Load secrets from .env
+    google_sheet_id = os.getenv("GG_SHEET_ID")
+    if google_sheet_id is None:
+        print("""
+              Id of google sheet is required to process data
+              in the .env file
+              ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF""")
+        sys.exit()
+
+    root_data_path = os.getenv("ROOT_DATA_PATH")
+    if root_data_path is None:
+        print("""
+            Path of films directory is required to process data
+            in the .env file
+            ex linux/mac : ROOT_DATA_PATH=/data/toto
+            ex windows : ROOT_DATA_PATH=e:\\ """)
+        sys.exit()
+
+    output_path = os.getenv("OUTPUT_PATH")
+    if output_path is None:
+        print("""
+            Output path for results directory required to process data
+            in the .env file
+            ex linux/mac : OUTPUT_PATH=/data/results
+            ex windows : OUTPUT_PATH=e:\\results """)
+        sys.exit()
+
+
+    root_data_path = Path(root_data_path)
+    output_path = Path(output_path)
 
 
     parser = argparse.ArgumentParser(description="Trouver le centre de fichier vidéo.")
-    parser.add_argument('-v','--video_path', type=str, help="Le chemin vers le fichier vidéo.")
+    #parser.add_argument('-v','--video_path', type=str, help="Le chemin vers le fichier vidéo.")
+
+    parser = argparse.ArgumentParser(description="Numéro de la ligne à traiter dans le fichier Google.")
+    parser.add_argument('-n','--numero_ligne', type=int)
 
     args = parser.parse_args()
 
 
-    google_sheet_id = os.getenv("GG_SHEET_ID")
-    if (google_sheet_id is None) & (args.video_path is None) :
-        print("""
-            Id of google sheet or file path is required to process data
-            in the .env file
-            ex : GG_SHEET_ID=1dfsfsdfljkgmfdjg322RfeDF""")
 
-    if args.video_path is not None:
-        video_paths.append(args.video_path)
-    else:
-        video_datas = get_file_names_from_google(google_sheet_id,root_data_path)
+    video_datas = get_file_names_from_google(google_sheet_id,root_data_path,args.numero_ligne)
 
     for ligne in video_datas:
-        print(ligne)
+        print(f'{ligne=}')
+
+
 #    sys.exit()
     resultats = [
-        compute_center(video_data, save_figs_path)
+        compute_center(video_data, output_path)
         for video_data in video_datas
     ]
 
     # On retire des resultats les resultats nuls
     clean_resultats =  [x for x in resultats if x is not None]
-    _#_import__("IPython").embed()
+    #_import__("IPython").embed()
 
     for resultat in clean_resultats:
         a,b,c = resultat
