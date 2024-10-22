@@ -19,6 +19,7 @@ from scipy.interpolate import griddata
 from scipy import ndimage
 from dotenv import load_dotenv
 from tqdm import trange,tqdm
+from tqdm.contrib.concurrent import process_map
 from codetiming import Timer
 import numpy.ma as ma
 import datetime
@@ -567,7 +568,7 @@ class DzianiBullage:
         #print(f'results_array.shape {self.results_array.shape}')
         #__import__("IPython").embed()
 
-        with Timer(text="{name}: {:.4f} seconds", name="Conversion en tableaux NumPy"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Conversion en tableaux NumPy"):
             self.convert_result_to_np()
 
     def convert_result_to_np(self):
@@ -604,11 +605,12 @@ class DzianiBullage:
         self.np_speeds =  np.load(self.results_np_speeds_filepath )
 
 
-
-
+##########################################################################################
+##### On pourrait directement envoyer density(i,j) plutot que le tableau
+##########################################################################################
     def process_cell(self,args):
         i, j, x_edges, y_edges, positions_X, positions_Y, speeds, density, max_sample_size, target_density = args
-        print(f'process_cell start for {i=}\t{j=}')
+        #print(f'process_cell start for {i=}\t{j=}')
 
         # Définir les limites de la cellule
         x_lower, x_upper = x_edges[i], x_edges[i + 1]
@@ -641,7 +643,7 @@ class DzianiBullage:
                 sampled_Y = cell_positions_Y
                 sampled_speeds = cell_speeds
 
-        print(f'process_cell end for {i=}\t{j=}')
+        #print(f'process_cell end for {i=}\t{j=}')
         return sampled_X, sampled_Y, sampled_speeds
 
     def interpolation(self):
@@ -655,7 +657,7 @@ class DzianiBullage:
 
 
         ## Echantillonnage des données pour l'interpolation en fonction de la densité des points
-        with Timer(text="{name}: {:.4f} seconds", name="Echantillonnage des données pour l interpolation en fonction de la densité des points"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Echantillonnage des données pour l interpolation en fonction de la densité des points"):
             # Découper l'image en cellules d'échantillonnage
             x_min, x_max = np.min(positions_X), np.max(positions_X)
             y_min, y_max = np.min(positions_Y), np.max(positions_Y)
@@ -669,17 +671,17 @@ class DzianiBullage:
             sampled_speeds = []
 
         # Calculer la densité des points dans chaque cellule
-        with Timer(text="{name}: {:.4f} seconds", name="Calculer la densité des points dans chaque cellule"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Calculer la densité des points dans chaque cellule"):
             density, _, _ = np.histogram2d(positions_X, positions_Y, bins=[x_edges, y_edges])
 
         # Définir un nombre cible et un nombre max de points à échantillonner
-        with Timer(text="{name}: {:.4f} seconds", name="Définir un nombre cible et un nombre max de points à échantillonner"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Définir un nombre cible et un nombre max de points à échantillonner"):
             total_points = len(positions_X)
             target_density = total_points / (num_cells ** 2) #nombre cible
             max_sample_size = int(np.ceil(target_density / 1000) * 1000)  #nombre max = nombre cible arrondi au millier supérieur
 
         # Parcourir chaque cellule
-        with Timer(text="{name}: {:.4f} seconds", name="Parcourir chaque cellule"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Parcourir chaque cellule"):
             args = [
                 (i, j, x_edges, y_edges, positions_X, positions_Y, speeds, density, max_sample_size, target_density)
                 for i, j in itertools.product(range(len(x_edges) - 1), range(len(y_edges) - 1))
@@ -688,19 +690,30 @@ class DzianiBullage:
             sampled_positions_X, sampled_positions_Y, sampled_speeds = [], [], []
 
             # Utilisation de Pool pour exécuter la fonction sur plusieurs cœurs
+            chunksize=int(len(args)/self.cpu_nb)
+            print(f"Process_Map avec {self.cpu_nb=}\t{chunksize=}\t{len(args)=}")
             with Pool(self.cpu_nb) as pool:
-                results = pool.map(self.process_cell, args)
-            print("Fin results")
-            # Combiner les résultats avec np.concatenate
-            for res in results:
-                sampled_X, sampled_Y, sampled_speeds_ = res
-                sampled_positions_X = np.concatenate((sampled_positions_X, sampled_X))
-                sampled_positions_Y = np.concatenate((sampled_positions_Y, sampled_Y))
-                sampled_speeds = np.concatenate((sampled_speeds, sampled_speeds_))
+                #results = pool.map(self.process_cell, args)
+                # process_map pour avoir une progression
+                results = process_map(self.process_cell, args,chunksize=100)
 
+            print(f"Concaténation des results...{len(results)=}")
+            # Combiner les résultats avec np.concatenate
+            # __import__("IPython").embed()
+
+            # for res in tqdm(results):
+            #     sampled_X, sampled_Y, sampled_speeds_ = res
+            #     sampled_positions_X = np.concatenate((sampled_positions_X, sampled_X))
+            #     sampled_positions_Y = np.concatenate((sampled_positions_Y, sampled_Y))
+            #     sampled_speeds = np.concatenate((sampled_speeds, sampled_speeds_))
+
+            sampled_positions_X_bis, sampled_positions_Y_bis, sampled_speeds_bis = zip(*results)
+            sampled_positions_X = np.array([item for sublist in sampled_positions_X_bis for item in sublist])
+            sampled_positions_Y = np.array([item for sublist in sampled_positions_Y_bis for item in sublist])
+            sampled_speeds = np.array([item for sublist in sampled_speeds_bis for item in sublist])
 
         # Créer une carte des points échantillonnés à interpoler en gradient de couleur
-        with Timer(text="{name}: {:.4f} seconds", name="Créer une carte des points échantillonnés à interpoler en gradient de couleur"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Créer une carte des points échantillonnés à interpoler en gradient de couleur"):
             fig, ax = plt.subplots(figsize=(10, 8))
             # Tracer les points avec une colormap pour les vitesses
             sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=10, edgecolor='none')
@@ -721,7 +734,7 @@ class DzianiBullage:
 
 
         ## Réaliser l'interpolation
-        with Timer(text="{name}: {:.4f} seconds", name="Réaliser l interpolation"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Réaliser l interpolation"):
             # Créer une grille avec une résolution fixe
             resolution_x = 200
             resolution_y = 200
@@ -730,7 +743,7 @@ class DzianiBullage:
             grid_X, grid_Y = np.meshgrid(x, y)
 
         # Interpolation sur la grille
-        with Timer(text="{name}: {:.4f} seconds", name="Interpolation sur la grille"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur la grille"):
             grid_speeds = griddata(
                 (sampled_positions_X, sampled_positions_Y),  # Coordonnées des points échantillonnés
                 sampled_speeds,                      # Valeurs à interpoler
@@ -740,7 +753,7 @@ class DzianiBullage:
             )
 
         # Appliquer un filtre de moyenne pour lisser le signal
-        with Timer(text="{name}: {:.4f} seconds", name="Appliquer un filtre de moyenne pour lisser le signal"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Appliquer un filtre de moyenne pour lisser le signal"):
             sigma = 1.5  # Paramètre de lissage
             smoothed_grid_speeds = ndimage.gaussian_filter(grid_speeds, sigma=sigma)
 
@@ -767,6 +780,7 @@ def main():
 
     # Ajout de l'argument numero_ligne
     parser.add_argument('numero_ligne', type=int, help='Le numéro de ligne à traiter qui doit être un entier.')
+    parser.add_argument('--file_analysis','-a',default=False, action='store_true', help='flag pour faire l\'analyse du fichier')
 
     # Parsing des arguments
     args = parser.parse_args()
@@ -776,9 +790,7 @@ def main():
 
 
     print(datetime.datetime.now())
-    file_analysis = True
-    #file_analysis = False
-    interpolation = True
+
 
 
     duree_fenetre_analyse_seconde = 20
@@ -840,42 +852,41 @@ def main():
     # On calcul le gsd qui devient le "bon" gsd pour la suite
     dziani_bullage.gsd_hauteur = dziani_bullage.get_gsd()
 
-    if file_analysis :
+    if args.file_analysis :
 
         # modifier la longueur d'analyse du fichier.
         #dziani_bullage.movie_length_seconds = 300
 
-        with Timer(text="{name}: {:.4f} seconds", name="video_file_analysis"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> video_file_analysis"):
             dziani_bullage.video_file_analysis()
 
-        #with Timer(text="{name}: {:.4f} seconds", name="save_results_cPickle"):
+        #with Timer(text="{name}: {:.4f} seconds", name="=> save_results_cPickle"):
         #    dziani_bullage.save_results_pickle()
 
-        with Timer(text="{name}: {:.4f} seconds", name="save_results_numpy"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> save_results_numpy"):
             dziani_bullage.save_results_numpy()
 
-    if interpolation :
-        print("############################")
-        print("##### INTERPOLATION #######")
-        print("############################")
+    print("############################")
+    print("##### INTERPOLATION #######")
+    print("############################")
 
-        # with Timer(text="{name}: {:.4f} seconds", name="load_results_cPickle"):
-        #     dziani_bullage.load_results_pickle()
+    # with Timer(text="{name}: {:.4f} seconds", name="=> load_results_cPickle"):
+    #     dziani_bullage.load_results_pickle()
 
-        print(datetime.datetime.now())
+    print(datetime.datetime.now())
 
-        # Si l'analyse n'a pas été faite lors du lancement du script
-        # il faut charger les résultats
-        if not file_analysis :
-            with Timer(text="{name}: {:.4f} seconds", name="load_results_numpy"):
-                dziani_bullage.load_results_numpy()
+    # Si l'analyse n'a pas été faite lors du lancement du script
+    # il faut charger les résultats
+    if not args.file_analysis :
+        with Timer(text="{name}: {:.4f} seconds", name="=> load_results_numpy"):
+            dziani_bullage.load_results_numpy()
 
-        print(datetime.datetime.now())
+    print(datetime.datetime.now())
 
-        with Timer(text="{name}: {:.4f} seconds", name="interpolation"):
-            dziani_bullage.interpolation()
+    with Timer(text="{name}: {:.4f} seconds", name="=> interpolation"):
+        dziani_bullage.interpolation()
 
-        print(datetime.datetime.now())
+    print(datetime.datetime.now())
 
 
 if __name__ == "__main__":
