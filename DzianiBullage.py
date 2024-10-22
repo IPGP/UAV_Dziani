@@ -733,9 +733,8 @@ class DzianiBullage:
 
 
 
-        ## Réaliser l'interpolation
-        with Timer(text="{name}: {:.4f} seconds", name="=> Réaliser l interpolation"):
-            # Créer une grille avec une résolution fixe
+        # Créer une grille avec une résolution fixe
+        with Timer(text="{name}: {:.4f} seconds", name="=> Créer le meshgrid pour l interpolation"):
             resolution_x = 200
             resolution_y = 200
             x = np.linspace(x_min, x_max, resolution_x)
@@ -743,7 +742,7 @@ class DzianiBullage:
             grid_X, grid_Y = np.meshgrid(x, y)
 
         # Interpolation sur la grille
-        with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur la grille"):
+        with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur le meshgrid "):
             grid_speeds = griddata(
                 (sampled_positions_X, sampled_positions_Y),  # Coordonnées des points échantillonnés
                 sampled_speeds,                      # Valeurs à interpoler
