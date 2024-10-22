@@ -23,7 +23,7 @@ from tqdm.contrib.concurrent import process_map
 from codetiming import Timer
 import numpy.ma as ma
 import datetime
-from utils import get_data_from_google_sheet
+from utils import get_data_from_google_sheet,dask_gd2
 
 
 @dataclass
@@ -698,14 +698,6 @@ class DzianiBullage:
                 results = process_map(self.process_cell, args,chunksize=100)
 
             print(f"Concaténation des results...{len(results)=}")
-            # Combiner les résultats avec np.concatenate
-            # __import__("IPython").embed()
-
-            # for res in tqdm(results):
-            #     sampled_X, sampled_Y, sampled_speeds_ = res
-            #     sampled_positions_X = np.concatenate((sampled_positions_X, sampled_X))
-            #     sampled_positions_Y = np.concatenate((sampled_positions_Y, sampled_Y))
-            #     sampled_speeds = np.concatenate((sampled_speeds, sampled_speeds_))
 
             sampled_positions_X_bis, sampled_positions_Y_bis, sampled_speeds_bis = zip(*results)
             sampled_positions_X = np.array([item for sublist in sampled_positions_X_bis for item in sublist])
@@ -741,6 +733,7 @@ class DzianiBullage:
             y = np.linspace(y_min, y_max, resolution_y)
             grid_X, grid_Y = np.meshgrid(x, y)
 
+
         # Interpolation sur la grille
         with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur le meshgrid "):
             grid_speeds = griddata(
@@ -750,6 +743,11 @@ class DzianiBullage:
                 method='linear',                     # Méthode d'interpolation
                 fill_value=np.nan                    # Valeurs à utiliser pour les points en dehors des données
             )
+
+        # with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur le meshgrid multi CPU "):
+        #     grid_speeds= dask_gd2(sampled_positions_X, sampled_positions_Y, sampled_speeds,grid_X,grid_Y, self.cpu_nb,  algorithm='linear',chunksize=70)
+
+        # __import__("IPython").embed()
 
         # Appliquer un filtre de moyenne pour lisser le signal
         with Timer(text="{name}: {:.4f} seconds", name="=> Appliquer un filtre de moyenne pour lisser le signal"):
