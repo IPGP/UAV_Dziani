@@ -131,7 +131,14 @@ class DzianiBullage:
         self.results_np_X_filepath = self.output_path /  f'results_X_{self.tag_file}.npy'
         self.results_np_Y_filepath = self.output_path /  f'results_Y_{self.tag_file}.npy'
         self.results_np_speeds_filepath = self.output_path /  f'results_speeds_{self.tag_file}.npy'
+
+        self.results_grid_X_filepath = self.output_path /  f'results_grid_X_{self.tag_file}.npy'
+        self.results_grid_Y_filepath = self.output_path /  f'results_grid_Y_{self.tag_file}.npy'
+        self.results_smoothed_grid_speeds_filepath = self.output_path /  f'results_smoothed_grid_speeds_{self.tag_file}.npy'
+
         self.results_pickle_filepath = self.output_path /  f'results{self.tag_file}.pkl'
+
+
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
               f'{self.detection_diameter=}\n'
@@ -603,7 +610,7 @@ class DzianiBullage:
         self.np_X =  np.load(self.results_np_X_filepath )
         self.np_Y =  np.load(self.results_np_Y_filepath )
         self.np_speeds =  np.load(self.results_np_speeds_filepath )
-    
+
     def save_results_interpolation_numpy(self):
 
         print('Sauvegarde des resultats interpolation en numpy')
