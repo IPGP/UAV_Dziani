@@ -603,6 +603,13 @@ class DzianiBullage:
         self.np_X =  np.load(self.results_np_X_filepath )
         self.np_Y =  np.load(self.results_np_Y_filepath )
         self.np_speeds =  np.load(self.results_np_speeds_filepath )
+    
+    def save_results_interpolation_numpy(self):
+
+        print('Sauvegarde des resultats interpolation en numpy')
+        np.save(self.results_grid_X_filepath, self.grid_X )
+        np.save(self.results_grid_Y_filepath, self.grid_Y )
+        np.save(self.results_smoothed_grid_speeds_filepath, self.smoothed_grid_speeds )
 
 
 ##########################################################################################
@@ -768,7 +775,7 @@ class DzianiBullage:
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
 
-
+        return grid_X, grid_Y, smoothed_grid_speeds
 
 
 def main():
@@ -882,6 +889,9 @@ def main():
 
     with Timer(text="{name}: {:.4f} seconds", name="=> interpolation"):
         dziani_bullage.interpolation()
+
+    with Timer(text="{name}: {:.4f} seconds", name="=> save_results_numpy"):
+        dziani_bullage.save_results_interpolation_numpy()
 
     print(datetime.datetime.now())
 
