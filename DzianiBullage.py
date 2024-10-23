@@ -745,7 +745,7 @@ class DzianiBullage:
             resolution_y = 200
             x = np.linspace(x_min, x_max, resolution_x)
             y = np.linspace(y_min, y_max, resolution_y)
-            grid_X, grid_Y = np.meshgrid(x, y)
+            self.grid_X, self.grid_Y = np.meshgrid(x, y)
 
 
         # Interpolation sur la grille
@@ -753,25 +753,25 @@ class DzianiBullage:
             grid_speeds = griddata(
                 (sampled_positions_X, sampled_positions_Y),  # Coordonnées des points échantillonnés
                 sampled_speeds,                      # Valeurs à interpoler
-                (grid_X, grid_Y),                    # Coordonnées de la grille
+                (self.grid_X, self.grid_Y),                    # Coordonnées de la grille
                 method='linear',                     # Méthode d'interpolation
                 fill_value=np.nan                    # Valeurs à utiliser pour les points en dehors des données
             )
 
         # with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur le meshgrid multi CPU "):
-        #     grid_speeds= dask_gd2(sampled_positions_X, sampled_positions_Y, sampled_speeds,grid_X,grid_Y, self.cpu_nb,  algorithm='linear',chunksize=70)
+        #     grid_speeds= dask_gd2(sampled_positions_X, sampled_positions_Y, sampled_speeds,self.grid_X,grid_Y, self.cpu_nb,  algorithm='linear',chunksize=70)
 
         # __import__("IPython").embed()
 
         # Appliquer un filtre de moyenne pour lisser le signal
         with Timer(text="{name}: {:.4f} seconds", name="=> Appliquer un filtre de moyenne pour lisser le signal"):
             sigma = 1.5  # Paramètre de lissage
-            smoothed_grid_speeds = ndimage.gaussian_filter(grid_speeds, sigma=sigma)
+            self.smoothed_grid_speeds = ndimage.gaussian_filter(grid_speeds, sigma=sigma)
 
             # Créer une figure du résultat de l'interpolation
             fig, ax = plt.subplots(figsize=(10, 8))
             plt.gca().invert_yaxis()
-            contour = ax.contourf(grid_X, grid_Y, smoothed_grid_speeds, cmap=self.colormap, levels=100, vmin=0.1, vmax=0.4)
+            contour = ax.contourf(self.grid_X, self.grid_Y, self.smoothed_grid_speeds, cmap=self.colormap, levels=100, vmin=0.1, vmax=0.4)
             cbar = plt.colorbar(contour, ax=ax, label='Speeds')
             ax.set_xlabel('X Axis')
             ax.set_ylabel('Y Axis')
@@ -782,7 +782,7 @@ class DzianiBullage:
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
 
-        return grid_X, grid_Y, smoothed_grid_speeds
+        #return grid_X, self.grid_Y, self.smoothed_grid_speeds
 
 
 def main():
