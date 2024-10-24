@@ -709,7 +709,7 @@ class DzianiBullage:
             with Pool(self.cpu_nb) as pool:
                 #results = pool.map(self.process_cell, args)
                 # process_map pour avoir une progression
-                results = process_map(self.process_cell, args,chunksize=100)
+                results = process_map(self.process_cell, args,chunksize=chunksize)
 
             print(f"Concaténation des results...{len(results)=}")
 
