@@ -8,22 +8,19 @@ import socket
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
 from dataclasses import dataclass, field
+import datetime
 import psutil
-import requests
 import cv2
-import pickle as cPickle
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
 from scipy.interpolate import griddata
 from scipy import ndimage
 from dotenv import load_dotenv
-from tqdm import trange,tqdm
+from tqdm import trange
 from tqdm.contrib.concurrent import process_map
 from codetiming import Timer
-import numpy.ma as ma
-import datetime
-from utils import get_data_from_google_sheet,dask_gd2
+from utils import get_data_from_google_sheet
 
 
 @dataclass
@@ -748,6 +745,8 @@ class DzianiBullage:
             self.grid_X, self.grid_Y = np.meshgrid(x, y)
 
 
+
+
         # Interpolation sur la grille
         with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur le meshgrid "):
             grid_speeds = griddata(
@@ -757,9 +756,6 @@ class DzianiBullage:
                 method='linear',                     # Méthode d'interpolation
                 fill_value=np.nan                    # Valeurs à utiliser pour les points en dehors des données
             )
-
-        # with Timer(text="{name}: {:.4f} seconds", name="=> Interpolation sur le meshgrid multi CPU "):
-        #     grid_speeds= dask_gd2(sampled_positions_X, sampled_positions_Y, sampled_speeds,self.grid_X,grid_Y, self.cpu_nb,  algorithm='linear',chunksize=70)
 
         # __import__("IPython").embed()
 
@@ -814,7 +810,7 @@ def main():
         cpu_nb = cpu_count()
     # Windows
     else:
-        cpu_nb = cpu_count()
+        cpu_nb = cpu_count()-1
 
     print(f'Using {cpu_nb=} CPU')
 

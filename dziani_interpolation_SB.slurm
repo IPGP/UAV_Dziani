@@ -1,19 +1,15 @@
 #!/bin/sh
-#SBATCH -J Dziani_Python
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=128  # MPI per node
+#SBATCH --ntasks-per-node=64  # MPI per node
 #SBATCH --partition=ncpulong,ncpu,ncpushort
-#SATCH --mem=120G
-#SBATCH --output /gpfs/users/bonaime/logs/slurm-openmp-%j.out
+#SBATCH --output /gpfs/users/%u/logs/slurm-openmp-%j.out
 #SBATCH --mail-user=bonaime@ipgp.fr
-#SBATCH --mail-type=END
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=END,FAIL
 
 
 cd /gpfs/scratch/bonaime/git/UAV_Dziani
-
 source .venv/bin/activate
-
+python3 -V
 
 #On lance avec l'option $1 qui est le numéro de ligne à traiter
-python3 DzianiBullage.py $1
+python3 DzianiBullage.py $1 $2
