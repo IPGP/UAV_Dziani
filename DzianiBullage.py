@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import argparse
 import itertools
+from math import ceil
 import os
 import sys
 import csv
@@ -14,6 +15,7 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
+from mpl_toolkits.mplot3d import Axes3D
 from scipy.interpolate import griddata
 from scipy import ndimage
 from dotenv import load_dotenv
@@ -21,6 +23,7 @@ from tqdm import trange
 from tqdm.contrib.concurrent import process_map
 from codetiming import Timer
 from utils import get_data_from_google_sheet
+
 
 
 @dataclass
@@ -42,10 +45,9 @@ class DzianiBullage:
     movie_length_seconds : float = 0
     ALTI_ABS_LAC : float = 0
     ALTI_ABS_DRONE : float = 0
-    GSD_Calcul : float = 0
 
     ## Analysis
-    gsd_hauteur : float = 0
+    gsd_hauteur : float = 0  # pixel/m
     detection_diameter : int = 0
     #interpolation_diameter: int = 0
     detection_center : tuple  = None
@@ -54,8 +56,8 @@ class DzianiBullage:
     output_path : Path = ""
     root_data_path : Path = Path("./")
 
-    CELL_SIZE: int =  500
-    NB_BUBBLES: int = 3000
+    NB_BUBBLES: int = 700
+    MAX_DIST_PX: int = 5
 
     # images DPI:
     DPI_SAVED_IMAGES: int = None
@@ -71,7 +73,9 @@ class DzianiBullage:
 
 
     VITESSE_MIN_CLASSES_VITESSES : float = 0.1  # m/s
-    VITESSE_MAX_CLASSES_VITESSES : float = 0.4 # m/s
+    VITESSE_MAX_CLASSES_VITESSES : float = 0.45 # m/s
+
+
 
     BORNE_INF_GRAPH : float = 0.25
     BORNE_SUP_GRAPH : float = 0.33
@@ -110,7 +114,6 @@ class DzianiBullage:
         self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
         # Sensor size is in mm
         self.sensor_data = eval(donnees['SENSOR_DATA'])
-        self.GSD_Calcul = float(donnees['GSD_Calcul'])
 
         self.all_points = []
 
@@ -254,7 +257,7 @@ class DzianiBullage:
             position_y_debut += 120
 
 
-    def tracer_vitesse_vs_temps(self,numero_bulles_triees,speed_matrix , time_steps,debut_echantillonnage):
+    def tracer_vitesses_normalisees_vs_temps(self,numero_bulles_triees,speed_matrix , time_steps,debut_echantillonnage):
 
         fig, ax = plt.subplots()
         normalisation = plt.Normalize(vmin=self.VITESSE_MIN_CLASSES_VITESSES, vmax=self.VITESSE_MAX_CLASSES_VITESSES)  # Normalisation des données de vitesse pour l'échelle de couleur
@@ -279,6 +282,49 @@ class DzianiBullage:
         if self.DISPLAY_PLOTS:
             plt.show()
 
+    def tracer_vitesses_vs_temps(self,speed_dict , debut_echantillonnage):
+
+        # Convertir les données en une matrice 2D
+        all_speeds = np.array(list(speed_dict.values()))
+
+        # Déterminer les limites de normalisation
+        vmin = all_speeds.min()
+        vmax = all_speeds.max()
+        vmax = 1
+
+        # Créer les coordonnées de la grille
+        x = np.arange(all_speeds.shape[1] + 1)  # Une case par vitesse (colonnes, ici 601 pour délimiter 600 cases)
+        y = np.arange(all_speeds.shape[0] + 1)  # Une case par trajet (lignes)
+
+        # Créer le graphique
+        plt.figure(figsize=(12, 6))  # Largeur augmentée pour afficher plus de colonnes
+        norm = colors.Normalize(vmin=vmin, vmax=vmax)
+
+        # Utiliser pcolormesh pour afficher les données
+        mesh = plt.pcolormesh(x, y, all_speeds, cmap=self.colormap, norm=norm, shading='auto')
+
+        # Ajouter une barre de couleurcolor
+        plt.colorbar(mesh, label='Vitesse (m/s)')
+
+        # Ajouter des labels pour les axes
+        plt.xlabel("Index de la vitesse")
+        plt.ylabel("Trajet")
+
+        # Supprimer les yticks
+        plt.gca().yaxis.set_ticks([])  # Désactive les ticks verticaux
+
+        # Titre du graphique
+        plt.title(f'Vitesses au cours du temps \nDate de la vidéo: {self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s')
+
+        #ax.text(1.7, 1.02, f'Date de la vidéo: {self.date_video}', transform=ax.transAxes, horizontalalignment='right', fontsize=10, color='black')
+
+        if self.SAVE_PLOTS :
+            filename = f'Vitesses_vs_time_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+            filepath = self.output_path /  filename
+            plt.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
+
+        if self.DISPLAY_PLOTS:
+            plt.show()
 
     def frame_to_BGR2GRAY(self,frame):
         return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -358,6 +404,7 @@ class DzianiBullage:
             sys.exit()
         # Copy de la frame pour autre usage
         first_frame_copy=np.array(first_frame)
+        first_frame_copy_2=np.array(first_frame)
 
         # Cercles de détection et d'interpolation
         # Masque pour définir le cercle de détection
@@ -378,14 +425,19 @@ class DzianiBullage:
         masque_suivi = np.zeros_like(first_frame)
 
         #Définition des résultats des calculs
-        distances_totales = {}  # Distances totales parcourues par chaque point
+        distances_pixel_totales = {}  # Distances totales parcourues par chaque point
         total_times = {}  # Temps total de suivi pour chaque point
         #all_points = [] # Liste pour stocker toutes les positions X et Y des points
         all_X = [] # Liste pour stocker toutes les positions X des points
         all_Y = [] # Liste pour stocker toutes les positions Y des points
         speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
-        speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
 
+        speed_m_per_sec_par_trajet = {} # Dictionnaire où a chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
+        all_X_dict = {}
+        all_Y_dict = {}
+
+        indices_particules_a_virer = []
+        points_high_speed = []
 
         status_update_seconds= 3
 
@@ -420,6 +472,7 @@ class DzianiBullage:
             #print(f'duree  read frame {apre_read_frame - avant_read_frame}')
 
             if not frame_available:
+                print('No frame available. ===> exit')
                 break
 
             #Calcul du flux optique pour suivre les caractéristiques d'une frame à l'autre
@@ -431,8 +484,6 @@ class DzianiBullage:
             # Filtrer les bons points suivis dans la nouvelle frame
             points_encore_suivis = positions_suivies[statuts == 1]
             points_initiaux_encore_suivis = positions_initiales[statuts == 1]
-
-
             previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2)
 
@@ -444,45 +495,46 @@ class DzianiBullage:
             for i, (new, old) in enumerate(zip(points_encore_suivis, points_initiaux_encore_suivis)):
                 x_new_point, y_new_point = new.ravel()
                 x_old_point, y_old_point = old.ravel()
-                distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
-                speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
+                distance_pixel = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
+                speed_px_per_sec = distance_pixel / self.frame_time  # Calcule la vitesse en px/sec
                 speed_m_per_sec = speed_px_per_sec * self.gsd_hauteur  # Convertit la vitesse en m/sec
 
-                #all_points.append(new)  # Stocker le point
-                all_X.append(x_new_point) # Stocker le X du point
-                all_Y.append(y_new_point) # Stocker le Y du point
 
-                speeds_m_per_sec.append(speed_m_per_sec)
-                #print(f'{speed_m_per_sec=}')
-                rayon_cercle_largeur_ligne = 2
+                # si on n'a pas fait trop de distance alors on garde ce point
+                if (distance_pixel > self.MAX_DIST_PX)  :
+                    if i not in speed_m_per_sec_par_trajet:
+                        all_X_dict[i] = []
+                        all_Y_dict[i] = []
+                        speed_m_per_sec_par_trajet[i] = []
+                        distances_pixel_totales[i] = 0
+                        total_times[i] = 0
+                    # Mise à jour des distances et des temps
+                    all_X_dict[i].append(x_new_point)
+                    all_Y_dict[i].append(y_new_point)
+                    speed_m_per_sec_par_trajet[i].append(speed_m_per_sec)
+                    distances_pixel_totales[i] += distance_pixel
+                    total_times[i] += 1
 
-                color = self.speed_to_color(speed_m_per_sec)
-                #cv2.line(masque_suivi, (int(x_newPoint), int(y_newPoint)), (int(x_oldPoint), int(y_oldPoint)), color, rayon_cercle_largeur_ligne)
-                if debut_echantillonnage == 0 :
-                    cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
-                #cv2.circle(frame, (int(x_newPoint), int(y_newPoint)), rayon_cercle_largeur_ligne, color, -1)
+                    #figure pour la 1ere fenetre
+                    if debut_echantillonnage == 0 :
+                        rayon_cercle_largeur_ligne = 2
+                        color = self.speed_to_color(speed_m_per_sec)
+                        cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
 
-                if i not in speed_m_per_sec_par_trajet:
-                    speed_m_per_sec_par_trajet[i] = []
-                speed_m_per_sec_par_trajet[i].append(speed_m_per_sec)
-
-
-                # Initialisation s'ils n'existent pas déjà
-                if i not in distances_totales:
-                    distances_totales[i] = 0
-                    total_times[i] = 0
-
-                # Mise à jour des distances et des temps
-                distances_totales[i] += distance
-                total_times[i] += 1
-
-                #initial_positions = positions_initiales.copy()
-                #initial_positions = np.array(positions_initiales)
+                else :
+                    indices_particules_a_virer.append(i)
+                    points_high_speed.append([(int(x_old_point),int(y_old_point)), (int(x_new_point),int(y_new_point))])
 
 
             # on sauve l'image à la derniere frame pour début_echantillonnage = 0
             if debut_echantillonnage == 0 and frame_count == frames_per_window -1 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
-                self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
+                # traits entre les high speed points
+                for high_speed_point in points_high_speed:
+                    old_p,new_p = high_speed_point
+                    #print(f'{old_p=},{new_p=}')
+                    cv2.line(first_frame_copy_2,old_p, new_p,  (255, 0, 255),40)
+
+                self.save_trajet(masque_suivi, first_frame_copy_2,points_encore_suivis,frame_count,debut_echantillonnage)
 
             previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2 )
@@ -490,11 +542,92 @@ class DzianiBullage:
         video_file.release()
 
         #print(f'Fin traitement video for offset {debut_echantillonnage:03}')
+        ##################### filtrage des petits trajets de particules #################
 
+        # la dernière fenetre n'a peut etre pas le meme nombre de frame. On supprime le dernier i de tous les tableaux dans ce cas
+        max_indice=max(speed_m_per_sec_par_trajet.keys())
+        if len(speed_m_per_sec_par_trajet[max_indice]) != self.window_size_seconds*self.frames_per_second:
+            speed_m_per_sec_par_trajet.pop(max_indice)
+            all_X_dict.pop(max_indice)
+            all_Y_dict.pop(max_indice)
+
+        __import__("IPython").embed()
+
+        self.tracer_vitesses_vs_temps(speed_m_per_sec_par_trajet,debut_echantillonnage)
+
+        np.save(self.output_path /  f'all_X_{self.tag_file}.npy', np.array(all_X))
+        np.save(self.output_path /  f'all_Y_{self.tag_file}.npy', np.array(all_Y))
+        np.save(self.output_path /  f'speeds_m_per_sec_{self.tag_file}.npy', np.array(speeds_m_per_sec))
+
+        np.save(self.output_path /  f'all_X_dict_{self.tag_file}.npy', all_X_dict)
+        np.save(self.output_path /  f'all_Y_dict_{self.tag_file}.npy', all_Y_dict)
+        np.save(self.output_path /  f'speed_m_per_sec_par_trajet_dict_{self.tag_file}.npy', speed_m_per_sec_par_trajet)
+
+        # load_values
+        speed_m_per_sec_par_trajet = np.load(self.output_path /  f'speed_m_per_sec_par_trajet_dict_{self.tag_file}.npy')
+        all_X_dict = np.load(self.output_path /  f'all_X_dict_{self.tag_file}.npy')
+        all_Y_dict = np.load(self.output_path /  f'all_Y_dict_{self.tag_file}.npy')
+
+
+
+        #print(f'{len(all_X_dict)}\t{len(all_Y_dict)}\t{len(speed_m_per_sec_par_trajet)}\t{len(distances_totales)}\t{len(total_times)}\t')
+
+
+        min_speed = 1000
+        max_speed = 0
+
+
+        print(f'Indices des particules a virer : {indices_particules_a_virer}')
+
+        dist_min_en_m = 3
+
+        all_X_filtered = [] # Liste pour stocker toutes les positions X des points
+        all_Y_filtered = [] # Liste pour stocker toutes les positions Y des points
+        speeds_m_per_sec_filtered = [] # Liste pour stocker les vitesses en m/s pour chaque point
+        distances_array_m=[]
+        speed_m_per_sec_par_trajet_filtered ={}         # Dictionnaire où a chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
+
+        for i in range(len(all_X_dict)):
+            #print(f'{len(all_X_dict[i])}\t{len(all_Y_dict[i])}\t{len(speed_m_per_sec_par_trajet[i])}\t{int(distances_totales[i])}\t{total_times[i]}\t')
+            distances_array_m.append(distances_pixel_totales[i]*self.gsd_hauteur)
+            if (distances_pixel_totales[i]*self.gsd_hauteur > dist_min_en_m) & (i not in indices_particules_a_virer):
+                if max(speed_m_per_sec_par_trajet[i]) > max_speed:
+                        max_speed = max(speed_m_per_sec_par_trajet[i])
+                if min(speed_m_per_sec_par_trajet[i]) < min_speed:
+                    min_speed = min(speed_m_per_sec_par_trajet[i])
+
+                all_X_filtered += all_X_dict[i]
+                all_Y_filtered += all_Y_dict[i]
+                speeds_m_per_sec_filtered += speed_m_per_sec_par_trajet[i]
+                if i not in speed_m_per_sec_par_trajet_filtered:
+                    speed_m_per_sec_par_trajet_filtered[i] = speed_m_per_sec_par_trajet[i]
+
+        print(f'Resultat filtrage pour cette sequence. avant {len(all_X)} apres {len(all_X_filtered)} soit {100-ceil(100*len(all_X_filtered)/len(all_X))}% en moins')
+        print(f'{max_speed=}\t{min_speed=}')
+
+
+        speed_m_per_sec=speeds_m_per_sec_filtered
+        speed_m_per_sec_par_trajet=speed_m_per_sec_par_trajet_filtered
+        all_X=all_X_filtered
+        all_Y=all_Y_filtered
+
+        # histogrammes des vitesses
+        # plt.close()
+        # plt.hist(distances_array_m,50)
+        # plt.axvline(dist_min_en_m, color='r',  linewidth=2)
+        # plt.title(f"""Distribution des particules suivie dans la fenetre
+        #            commançant à {debut_echantillonnage:03} avec une durée de {self.window_size_seconds}s """)
+        # plt.xlabel('distance parcourue en m')
+
+        # filepath = self.output_path /  f'{debut_echantillonnage:03}_histogame_distances{self.date_video}.png'
+        # plt.savefig(filepath, dpi=300)
+
+        #################
 
         #Vitesses au cours du temps
         vitesses_moyennes = {}
         for i, speed_list_per_frame in speed_m_per_sec_par_trajet.items():
+        #for i, speed_list_per_frame in speed_m_per_sec_par_trajet:
             if len(speed_list_per_frame) >= self.frames_per_second:
     #           print(f'{debut_echantillonnage:03} speed_list {speed_list_per_frame}')
                 ma_speeds = self.calculate_moving_average(speed_list_per_frame, self.frames_per_second)
@@ -509,6 +642,7 @@ class DzianiBullage:
         #print('@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@')
         #print(f'{debut_echantillonnage:03} (len(speeds) for speeds in vitesses_moyennes.values() {(len(speeds) for speeds in vitesses_moyennes.values())}')
         longest_length = max((len(speeds) for speeds in vitesses_moyennes.values()),default=-9999)
+
 
         if  longest_length == -9999:
             print('-------------------------------------------------------------------')
@@ -552,25 +686,32 @@ class DzianiBullage:
         #print(f"{debut_echantillonnage:03} tracer_vitesse_vs_temps @@")
         #print(f"{debut_echantillonnage:03} Shapes {sorted_bubble_ids} {speed_matrix} {time_steps}")
         if debut_echantillonnage == 0 :
-            self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
+            self.tracer_vitesses_normalisees_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
 
         #return [all_points,speeds_m_per_sec]
-        return [all_X, all_Y, speeds_m_per_sec]
+        return [all_X, all_Y, speeds_m_per_sec,distances_array_m]
 
 
     def video_file_analysis(self):
         print("Working on the video file ")
         array_arguments_for_calculer_vitesse_bulles =  list(range(0, self.movie_length_seconds - self.window_size_seconds, self.windows_shift_seconds))
 
-        with Pool(processes=self.cpu_nb) as pool:
-            # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
-            #  de la array_arguments_for_calculer_vitesse_bulles
-            results_local=pool.map(self.calculer_vitesse_bulles, array_arguments_for_calculer_vitesse_bulles)
+        if self.cpu_nb != 1 :
+            with Pool(processes=self.cpu_nb) as pool:
+                # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
+                #  de la array_arguments_for_calculer_vitesse_bulles
+                results_local=pool.map(self.calculer_vitesse_bulles, array_arguments_for_calculer_vitesse_bulles)
+        else :
+            # pour tester
+            results_local =[]
+            for args_input in array_arguments_for_calculer_vitesse_bulles:
+                results_local += self.calculer_vitesse_bulles(args_input)
 
         self.results_array=results_local
         #print(f'results_local.shape {results_local.shape}')
         #print(f'results_array.shape {self.results_array.shape}')
-        #__import__("IPython").embed()
+       # __import__("IPython").embed()
+
 
         with Timer(text="{name}: {:.4f} seconds", name="=> Conversion en tableaux NumPy"):
             self.convert_result_to_np()
@@ -585,6 +726,7 @@ class DzianiBullage:
             Xs = item[0]
             Ys = item[1]
             values = item[2]
+
 
             for X, Y, value in zip(Xs,Ys, values):
                 positions_X_tmp.append(X)
@@ -657,7 +799,16 @@ class DzianiBullage:
         #print(f'process_cell end for {i=}\t{j=}')
         return sampled_X, sampled_Y, sampled_speeds
 
+
+    def mean_zip(self,point):
+        pos_X,pos_Y,local_speeds = point
+        if local_speeds:
+            return [pos_X,pos_Y,np.mean(local_speeds)]
+        return
+
     def interpolation(self):
+
+        #__import__("IPython").embed()
 
 
         # Récupéation des datas
@@ -665,7 +816,133 @@ class DzianiBullage:
         positions_Y = self.np_Y
         speeds = self.np_speeds
 
+        # ######################################################################################################################################################
+        # test moyennage "simple"
+        print("debut moyennage")
+        with Timer(text="{name}: {:.4f} seconds", name="=> moyennage en chaque point"):
+            pos_X=[]
+            pos_Y=[]
+            mean_speed=[]
 
+            from collections import defaultdict
+
+            values_by_coords = defaultdict(list)
+
+            for item in zip(positions_X,positions_Y,speeds):
+                if item:
+                    x, y, value = item
+                    # on va moyenner autour d'1/2 pixel
+                    x = round(x)
+                    y = round(y)
+                    values_by_coords[(x, y)].append(value)
+
+
+            # for item in values_by_coords.items():
+            #     coords, values = item
+            #     if len(values) > 1:
+            #         print(item)
+
+            # Étape 2 : Calculer la moyenne pour chaque couple de coordonnées
+            average_by_coords = {coords: sum(values) / len(values) for coords, values in values_by_coords.items()}
+
+            pos_X = [coords[0] for coords in average_by_coords]
+            pos_Y = [coords[1] for coords in average_by_coords]
+            mean_speed = list(average_by_coords.values())
+
+            # __import__("IPython").embed()
+
+            # lissage gaussien
+            # sigma = 3  # Paramètre de lissage
+            # self.smoothed_mean_speeds = ndimage.gaussian_filter(mean_speed, sigma=sigma)
+
+
+            fig, ax = plt.subplots(figsize=(10, 8))
+            # Tracer les points avec une colormap pour les vitesses
+            # sc = ax.scatter(pos_X, pos_Y, c=self.smoothed_mean_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=1, edgecolor='none')
+            sc = ax.scatter(pos_X, pos_Y, c=mean_speed, cmap=self.colormap, vmin=0.1, vmax=0.4, s=1, edgecolor='none')
+
+            plt.colorbar(sc, ax=ax, label='Average Speed')
+
+            # # Ajouter des étiquettes et un titre
+            ax.set_xlabel('X Position')
+            ax.set_ylabel('Y Position')
+            ax.set_title('Scatter Plot of smoothed average speed with speed colormap')
+            # # Ajuster les limites des axes si nécessaire
+            ax.set_xlim([np.min(pos_X), np.max(pos_X)])
+            ax.set_ylim([np.min(pos_Y), np.max(pos_Y)])
+            plt.gca().invert_yaxis()
+            # Sauvegarder la figure dans un fichier spécifié
+            filepath = self.output_path /  f'average_speed{self.date_video}.png'
+            plt.savefig(filepath, dpi=300)
+            plt.close(fig)
+
+
+            ################ 4D ###############
+
+            hauteurs_tmp=[]
+            hauteurs=[]
+
+            for item in values_by_coords.items():
+                    coord, values = item
+                    hauteurs_tmp.append(len(values))
+
+            ### Filtrage pour les petites vitesses
+            for item in zip(hauteurs_tmp,mean_speed):
+                haut,speed = item
+                if speed < -5550.13 :
+                    hauteurs.append(0)
+                else:
+                    hauteurs.append(haut)
+
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.view_init(elev=25.)
+
+            # Tracer les points avec une colormap pour les vitesses
+            # sc = ax.scatter(pos_X, pos_Y, c=self.smoothed_mean_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=1, edgecolor='none')
+            sc = ax.scatter(pos_X, pos_Y, hauteurs,c=mean_speed, s = 1,cmap=self.colormap, marker='.', vmin=0.1, vmax=0.4, edgecolor='none', alpha=1)
+
+            plt.colorbar(sc, ax=ax, label='Average Speed')
+
+            # # Ajouter des étiquettes et un titre
+            ax.set_xlabel('X Position')
+            ax.set_ylabel('Y Position')
+            ax.set_title('3d Plot of smoothed average speed with speed colormap')
+            # # Ajuster les limites des axes si nécessaire
+            ax.set_xlim([np.min(pos_X), np.max(pos_X)])
+            ax.set_ylim([np.min(pos_Y), np.max(pos_Y)])
+            plt.gca().invert_yaxis()
+            # Sauvegarder la figure dans un fichier spécifié
+            filepath = self.output_path /  f'average_speed_4D_{self.date_video}.png'
+            plt.savefig(filepath, dpi=300)
+            plt.close(fig)
+
+
+            # # lissage gaussien
+            # sigma = 1.5  # Paramètre de lissage
+            # smoothed_mean_speeds = ndimage.gaussian_filter(mean_speed, sigma=sigma)
+            # fig, ax = plt.subplots(figsize=(10, 8))
+            # # Tracer les points avec une colormap pour les vitesses
+            # sc = ax.scatter(pos_X, pos_Y, c=smoothed_mean_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=1, edgecolor='none')
+            # #sc = ax.scatter(pos_X, pos_Y, c=mean_speed, cmap=self.colormap, vmin=0.1, vmax=0.4, s=1, edgecolor='none')
+
+            # plt.colorbar(sc, ax=ax, label='Average Speed')
+
+            # # # Ajouter des étiquettes et un titre
+            # ax.set_xlabel('X Position')
+            # ax.set_ylabel('Y Position')
+            # ax.set_title('Scatter Plot of smoothed average speed with speed colormap')
+            # # # Ajuster les limites des axes si nécessaire
+            # ax.set_xlim([np.min(pos_X), np.max(pos_X)])
+            # ax.set_ylim([np.min(pos_Y), np.max(pos_Y)])
+            # plt.gca().invert_yaxis()
+            # # Sauvegarder la figure dans un fichier spécifié
+            # filepath = self.output_path /  f'average_speed_smoothed_{self.date_video}.png'
+            # plt.savefig(filepath, dpi=300)
+            # plt.close(fig)
+
+
+        ######################################################################################################################################################
 
         ## Echantillonnage des données pour l'interpolation en fonction de la densité des points
         with Timer(text="{name}: {:.4f} seconds", name="=> Echantillonnage des données pour l interpolation en fonction de la densité des points"):
@@ -703,10 +980,11 @@ class DzianiBullage:
             # Utilisation de Pool pour exécuter la fonction sur plusieurs cœurs
             chunksize=int(len(args)/self.cpu_nb)
             print(f"Process_Map avec {self.cpu_nb=}\t{chunksize=}\t{len(args)=}")
-            with Pool(self.cpu_nb) as pool:
+            #with Pool(self.cpu_nb) as pool:
                 #results = pool.map(self.process_cell, args)
-                # process_map pour avoir une progression
-                results = process_map(self.process_cell, args,chunksize=chunksize)
+
+            # process_map pour avoir une progression
+            results = process_map(self.process_cell, args, chunksize=chunksize, max_workers=self.cpu_nb)
 
             print(f"Concaténation des results...{len(results)=}")
 
@@ -719,9 +997,8 @@ class DzianiBullage:
         with Timer(text="{name}: {:.4f} seconds", name="=> Créer une carte des points échantillonnés à interpoler en gradient de couleur"):
             fig, ax = plt.subplots(figsize=(10, 8))
             # Tracer les points avec une colormap pour les vitesses
-            sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=10, edgecolor='none')
+            sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, s = 1,cmap=self.colormap, marker='.', vmin=0.1, vmax=0.4, edgecolor='none')
             plt.colorbar(sc, ax=ax, label='Speed')
-            plt.gca().invert_yaxis()
             # Ajouter des étiquettes et un titre
             ax.set_xlabel('X Position')
             ax.set_ylabel('Y Position')
@@ -729,6 +1006,8 @@ class DzianiBullage:
             # Ajuster les limites des axes si nécessaire
             ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
             ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
+
+            plt.gca().invert_yaxis()
             # Sauvegarder la figure dans un fichier spécifié
             filepath = self.output_path /  f'Points_echantillonnes_{self.date_video}.png'
             plt.savefig(filepath, dpi=300)
@@ -757,7 +1036,6 @@ class DzianiBullage:
                 fill_value=np.nan                    # Valeurs à utiliser pour les points en dehors des données
             )
 
-        # __import__("IPython").embed()
 
         # Appliquer un filtre de moyenne pour lisser le signal
         with Timer(text="{name}: {:.4f} seconds", name="=> Appliquer un filtre de moyenne pour lisser le signal"):
@@ -766,12 +1044,12 @@ class DzianiBullage:
 
             # Créer une figure du résultat de l'interpolation
             fig, ax = plt.subplots(figsize=(10, 8))
-            plt.gca().invert_yaxis()
             contour = ax.contourf(self.grid_X, self.grid_Y, self.smoothed_grid_speeds, cmap=self.colormap, levels=100, vmin=0.1, vmax=0.4)
             cbar = plt.colorbar(contour, ax=ax, label='Speeds')
             ax.set_xlabel('X Axis')
             ax.set_ylabel('Y Axis')
             ax.set_title('Interpolated Grid with Smoothing Applied')
+            plt.gca().invert_yaxis()
 
             # Sauvegarder l'image résultante
             filepath = self.output_path /  f'Interpolation_{self.date_video}.png'
@@ -800,7 +1078,6 @@ def main():
 
 
 
-    duree_fenetre_analyse_seconde = 20
 
     # Scapad
     if 'ncpu' in socket.gethostname():
@@ -812,7 +1089,8 @@ def main():
     else:
         cpu_nb = cpu_count()-1
 
-    print(f'Using {cpu_nb=} CPU')
+    cpu_nb=1
+    print(f'Using {cpu_nb=} CPU on {socket.gethostname()}')
 
     duree_fenetre_analyse_seconde = 20
 
