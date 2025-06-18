@@ -18,13 +18,14 @@ from tqdm import trange
 from utils import get_data_from_google_sheet
 
 
-MAX_DIST_PX=5
 
 class opticalflow:
     def __init__(self,google_sheet_id,line_number,root_data_path,output_path,csv_file=False,):
 
         self.VITESSE_MIN_CLASSES_VITESSES : float = 0.1  # m/s
         self.VITESSE_MAX_CLASSES_VITESSES : float = 1 # m/s
+        self.MAX_DIST_PX=5
+
         self.colormap =  plt.cm.rainbow
         self.SAVE_PLOTS = True
         self.DISPLAY_PLOTS = False
@@ -269,7 +270,7 @@ class opticalflow:
 
 
 
-                if (distance_pixel > MAX_DIST_PX)  :
+                if (distance_pixel > self.MAX_DIST_PX)  :
                 #if (speed_m_per_sec> MAX_SPEED_MS) or (distance_pixel*self.gsd_hauteur > (MAX_SPEED_MS/self.frames_per_second)) :
                     # print(f'''@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
                     #     {i=}\t{x_new_point=}\t{y_new_point=}
@@ -291,7 +292,7 @@ class opticalflow:
 
 
                 #figure pour la 1ere sequence
-                if debut_echantillonnage == 0 & (distance_pixel < MAX_DIST_PX):
+                if debut_echantillonnage == 0 & (distance_pixel < self.MAX_DIST_PX):
                     rayon_cercle_largeur_ligne = 1
                     color = self.speed_to_color(speed_m_per_sec)
                     cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)

@@ -76,7 +76,6 @@ class DzianiBullage:
     VITESSE_MAX_CLASSES_VITESSES : float = 0.45 # m/s
 
 
-
     BORNE_INF_GRAPH : float = 0.25
     BORNE_SUP_GRAPH : float = 0.33
 
@@ -105,7 +104,7 @@ class DzianiBullage:
         self.video_path = self.root_data_path / donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
         self.alti_abs_lac=donnees['ALTI_ABS_LAC']
-        self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
+        #self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
         self.detection_diameter = int(donnees['DIAMETRE_DETECTION'])
         #self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
         self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
@@ -119,9 +118,11 @@ class DzianiBullage:
 
 
         # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
+        self.winSize=23
+        self.maxLevel=1
+        # Paramètres pour la détection de coins Shi-Tomasi et le suivi optique Lucas-Kanade
         self.DETECTION_PARAMETERS = dict(maxCorners=self.NB_BUBBLES, qualityLevel=0.1, minDistance=0.5, blockSize=10)
-        self.TRACKING_PARAMETERS = dict(winSize=(15, 15), maxLevel=2, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
-
+        self.TRACKING_PARAMETERS = dict(winSize=(self.winSize, self.winSize), maxLevel=self.maxLevel, criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
 
 
         self.input_video_filename = os.path.basename(self.video_path)
@@ -138,6 +139,10 @@ class DzianiBullage:
 
         self.results_pickle_filepath = self.output_path /  f'results{self.tag_file}.pkl'
 
+        # Get data from video file
+        self.get_video_data()
+        # On calcul le gsd qui devient le "bon" gsd pour la suite
+        self.gsd_hauteur = self.get_gsd()
 
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
@@ -150,10 +155,10 @@ class DzianiBullage:
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
 
-        detection_area_pixels= np.pi * ((self.detection_diameter / 2) ** 2)
-        detection_area_meters = detection_area_pixels * (self.gsd_hauteur ** 2)
-        print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
-        print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
+        # detection_area_pixels= np.pi * ((self.detection_diameter / 2) ** 2)
+        # detection_area_meters = detection_area_pixels * (self.gsd_hauteur ** 2)
+        # print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
+        # print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
 
 
     def get_gsd(self):
@@ -284,14 +289,20 @@ class DzianiBullage:
 
     def tracer_vitesses_vs_temps(self,speed_dict , debut_echantillonnage):
 
-        # Convertir les données en une matrice 2D
-        all_speeds = np.array(list(speed_dict.values()))
 
-        # Déterminer les limites de normalisation
-        vmin = all_speeds.min()
-        vmax = all_speeds.max()
-        vmax = 1
+        max_length = max(len(v) for v in speed_dict.values())
 
+        # Uniformiser les longueurs en remplissant avec np.nan
+        all_speeds = np.array([
+            np.pad(v, (0, max_length - len(v)), constant_values=np.nan)
+            for v in speed_dict.values()
+        ])
+
+        # Déterminer les limites de normalisation (en ignorant les NaN)
+        vmin = np.nanmin(all_speeds)
+        vmax = np.nanmax(all_speeds)
+#        vmax = 1
+        print(f'Pour le graph, on a {vmin=} et {vmax=} ')
         # Créer les coordonnées de la grille
         x = np.arange(all_speeds.shape[1] + 1)  # Une case par vitesse (colonnes, ici 601 pour délimiter 600 cases)
         y = np.arange(all_speeds.shape[0] + 1)  # Une case par trajet (lignes)
@@ -412,12 +423,19 @@ class DzianiBullage:
         # Dessine un cercle plein = cercle de détection sur le masque avec une valeur de 255 (blanc)
         cv2.circle(masque_detection, self.detection_center, self.detection_diameter, 255, thickness=-1)
 
+        if debut_echantillonnage == 0 :
+            filename = f'first_frame_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+            filepath = self.output_path /  filename
+            cv2.imwrite(filepath, first_frame_copy)
+
         # #Image avec la position du cercle de détection
         if debut_echantillonnage == 0 :
             cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
             filename = f'Cercle_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
             cv2.imwrite(filepath, first_frame_copy)
+
+
 
         # Détermination des caractéristiques de détection
         first_frame_gray = self.frame_to_BGR2GRAY(first_frame)
@@ -501,7 +519,7 @@ class DzianiBullage:
 
 
                 # si on n'a pas fait trop de distance alors on garde ce point
-                if (distance_pixel > self.MAX_DIST_PX)  :
+                if (distance_pixel < self.MAX_DIST_PX)  :
                     if i not in speed_m_per_sec_par_trajet:
                         all_X_dict[i] = []
                         all_Y_dict[i] = []
@@ -516,7 +534,7 @@ class DzianiBullage:
                     total_times[i] += 1
 
                     #figure pour la 1ere fenetre
-                    if debut_echantillonnage == 0 :
+                    if debut_echantillonnage == 0 or True:
                         rayon_cercle_largeur_ligne = 2
                         color = self.speed_to_color(speed_m_per_sec)
                         cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
@@ -527,7 +545,8 @@ class DzianiBullage:
 
 
             # on sauve l'image à la derniere frame pour début_echantillonnage = 0
-            if debut_echantillonnage == 0 and frame_count == frames_per_window -1 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
+            #if debut_echantillonnage == 0 and frame_count == frames_per_window -1 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
+            if frame_count == frames_per_window -1 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
                 # traits entre les high speed points
                 for high_speed_point in points_high_speed:
                     old_p,new_p = high_speed_point
@@ -544,29 +563,36 @@ class DzianiBullage:
         #print(f'Fin traitement video for offset {debut_echantillonnage:03}')
         ##################### filtrage des petits trajets de particules #################
 
-        # la dernière fenetre n'a peut etre pas le meme nombre de frame. On supprime le dernier i de tous les tableaux dans ce cas
-        max_indice=max(speed_m_per_sec_par_trajet.keys())
-        if len(speed_m_per_sec_par_trajet[max_indice]) != self.window_size_seconds*self.frames_per_second:
-            speed_m_per_sec_par_trajet.pop(max_indice)
-            all_X_dict.pop(max_indice)
-            all_Y_dict.pop(max_indice)
+       # __import__("IPython").embed()
 
-        __import__("IPython").embed()
+        #plot_vitesse est pas mal
+
+        # # la dernière fenetre n'a peut etre pas le meme nombre de frame. On supprime le dernier i de tous les tableaux dans ce cas
+        # max_indice=max(speed_m_per_sec_par_trajet.keys())
+        # if len(speed_m_per_sec_par_trajet[max_indice]) != self.window_size_seconds*self.frames_per_second:
+        #     speed_m_per_sec_par_trajet.pop(max_indice)
+        #     all_X_dict.pop(max_indice)
+        #     all_Y_dict.pop(max_indice)
+
+        #     speed_m_per_sec_par_trajet.pop(558)
+        #     all_X_dict.pop(558)
+        #     all_Y_dict.pop(558)
+
 
         self.tracer_vitesses_vs_temps(speed_m_per_sec_par_trajet,debut_echantillonnage)
 
-        np.save(self.output_path /  f'all_X_{self.tag_file}.npy', np.array(all_X))
-        np.save(self.output_path /  f'all_Y_{self.tag_file}.npy', np.array(all_Y))
-        np.save(self.output_path /  f'speeds_m_per_sec_{self.tag_file}.npy', np.array(speeds_m_per_sec))
+        # np.save(self.output_path /  f'all_X_{self.tag_file}.npy', np.array(all_X))
+        # np.save(self.output_path /  f'all_Y_{self.tag_file}.npy', np.array(all_Y))
+        # np.save(self.output_path /  f'speeds_m_per_sec_{self.tag_file}.npy', np.array(speeds_m_per_sec))
 
-        np.save(self.output_path /  f'all_X_dict_{self.tag_file}.npy', all_X_dict)
-        np.save(self.output_path /  f'all_Y_dict_{self.tag_file}.npy', all_Y_dict)
-        np.save(self.output_path /  f'speed_m_per_sec_par_trajet_dict_{self.tag_file}.npy', speed_m_per_sec_par_trajet)
+        # np.save(self.output_path /  f'all_X_dict_{self.tag_file}.npy', all_X_dict)
+        # np.save(self.output_path /  f'all_Y_dict_{self.tag_file}.npy', all_Y_dict)
+        # np.save(self.output_path /  f'speed_m_per_sec_par_trajet_dict_{self.tag_file}.npy', speed_m_per_sec_par_trajet)
 
         # load_values
-        speed_m_per_sec_par_trajet = np.load(self.output_path /  f'speed_m_per_sec_par_trajet_dict_{self.tag_file}.npy')
-        all_X_dict = np.load(self.output_path /  f'all_X_dict_{self.tag_file}.npy')
-        all_Y_dict = np.load(self.output_path /  f'all_Y_dict_{self.tag_file}.npy')
+        # speed_m_per_sec_par_trajet = np.load(self.output_path /  f'speed_m_per_sec_par_trajet_dict_{self.tag_file}.npy')
+        # all_X_dict = np.load(self.output_path /  f'all_X_dict_{self.tag_file}.npy')
+        # all_Y_dict = np.load(self.output_path /  f'all_Y_dict_{self.tag_file}.npy')
 
 
 
@@ -1089,7 +1115,6 @@ def main():
     else:
         cpu_nb = cpu_count()-1
 
-    cpu_nb=1
     print(f'Using {cpu_nb=} CPU on {socket.gethostname()}')
 
     duree_fenetre_analyse_seconde = 20
@@ -1132,10 +1157,6 @@ def main():
                                     root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
                                     DPI_SAVED_IMAGES=120, DISPLAY_PLOTS=False,cpu_nb=cpu_nb)
 
-    # Get data from video file
-    dziani_bullage.get_video_data()
-    # On calcul le gsd qui devient le "bon" gsd pour la suite
-    dziani_bullage.gsd_hauteur = dziani_bullage.get_gsd()
 
     if args.file_analysis :
 
