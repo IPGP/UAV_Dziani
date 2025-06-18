@@ -42,7 +42,7 @@ class DzianiBullage:
     movie_length_seconds : float = 0
     ALTI_ABS_LAC : float = 0
     ALTI_ABS_DRONE : float = 0
-    GSD_Calcul : float = 0
+    #GSD_Calcul : float = 0
 
     ## Analysis
     gsd_hauteur : float = 0
@@ -110,7 +110,7 @@ class DzianiBullage:
         self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
         # Sensor size is in mm
         self.sensor_data = eval(donnees['SENSOR_DATA'])
-        self.GSD_Calcul = float(donnees['GSD_Calcul'])
+        #self.GSD_Calcul = float(donnees['GSD_Calcul'])
 
         self.all_points = []
 
