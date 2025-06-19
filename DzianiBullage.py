@@ -14,14 +14,13 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colors
-from scipy.interpolate import griddata
+from scipy.interpolate import griddata,interp1d, UnivariateSpline
 from scipy import ndimage
 from dotenv import load_dotenv
 from tqdm import trange
 from tqdm.contrib.concurrent import process_map
 from codetiming import Timer
 from utils import get_data_from_google_sheet
-
 
 @dataclass
 class DzianiBullage:
@@ -45,7 +44,9 @@ class DzianiBullage:
     #GSD_Calcul : float = 0
 
     ## Analysis
-    gsd_hauteur : float = 0
+    #gsd_hauteur : float = 0
+    GSD_Calcul : float = 0
+
     detection_radius : int = 0
     #interpolation_diameter: int = 0
     detection_center : tuple  = None
@@ -101,16 +102,18 @@ class DzianiBullage:
         self.video_path = self.root_data_path / donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
         self.alti_abs_lac=donnees['ALTI_ABS_LAC']
-        self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
+        #self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
         self.detection_radius = int(donnees['RAYON_DETECTION'])
         #self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
         self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
+        self.center_interpolation = eval(donnees['CENTRE_INTERPOLATION'])
         self.alti_abs_lac = float(donnees['ALTI_ABS_LAC'])
         self.alti_abs_drone = float(donnees['ALTI_ABS_DRONE'])
         self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
+        print(f'La distance drone <-> lac est de {self.distance_lac}')
         # Sensor size is in mm
-        self.sensor_data = eval(donnees['SENSOR_DATA'])
-        #self.GSD_Calcul = float(donnees['GSD_Calcul'])
+        #self.sensor_data = eval(donnees['SENSOR_DATA'])
+        self.sensor_height, self.sensor_width, self.focal_distance = eval(donnees['SENSOR_DATA'])
 
         self.all_points = []
 
@@ -123,8 +126,8 @@ class DzianiBullage:
 
         self.input_video_filename = os.path.basename(self.video_path)
         self.output_path = self.output_path  / f'{self.line_number}_resultats_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
-        self.tag_file=f'_{self.line_number}_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
-        self.results_csv_filepath = self.output_path / f'results{self.tag_file}.csv'
+        self.tag_file=f'{self.line_number}_{self.window_size_seconds}s_{self.windows_shift_seconds}s_{self.date_video}_{self.input_video_filename}'
+        self.results_csv_filepath = self.output_path / f'results_{self.tag_file}.csv'
         self.results_np_X_filepath = self.output_path /  f'results_X_{self.tag_file}.npy'
         self.results_np_Y_filepath = self.output_path /  f'results_Y_{self.tag_file}.npy'
         self.results_np_speeds_filepath = self.output_path /  f'results_speeds_{self.tag_file}.npy'
@@ -133,11 +136,9 @@ class DzianiBullage:
         self.results_grid_Y_filepath = self.output_path /  f'results_grid_Y_{self.tag_file}.npy'
         self.results_smoothed_grid_speeds_filepath = self.output_path /  f'results_smoothed_grid_speeds_{self.tag_file}.npy'
 
-        self.results_pickle_filepath = self.output_path /  f'results{self.tag_file}.pkl'
+        self.results_pickle_filepath = self.output_path /  f'results_{self.tag_file}.pkl'
 
-
-
-        print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
+        print(f'{self.video_path=}\n{self.date_video=}\n'
               f'{self.detection_radius=}\n'
               f'{self.detection_center=}\n'
               f'{self.output_path}'
@@ -147,24 +148,26 @@ class DzianiBullage:
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
 
-        detection_area_pixels= np.pi * ((self.detection_radius ) ** 2)
-        detection_area_meters = detection_area_pixels * (self.gsd_hauteur ** 2)
-        print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
-        print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
-
 
     def get_gsd(self):
 
         #GSDh= hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
-        GSDh = self.distance_lac*self.sensor_data[0] / (self.sensor_data[2] * self.frame_height)
-        GSDw = self.distance_lac*self.sensor_data[1] / (self.sensor_data[2] * self.frame_width)
-        #print(f'{GSDh}\t{GSDw}\t {min(GSDh,GSDw)}')
+        # GSDh = self.distance_lac*self.sensor_data[0] / (self.sensor_data[2] * self.frame_height)
+        # GSDw = self.distance_lac*self.sensor_data[1] / (self.sensor_data[2] * self.frame_width)
+        GSDh = self.distance_lac*self.sensor_height / (self.focal_distance * self.frame_height)
+        GSDw = self.distance_lac*self.sensor_width / (self.focal_distance * self.frame_width)
+        print(f'{self.sensor_height=}\t{self.sensor_width=}\t{self.frame_height=}\t{self.frame_width=}\t{GSDh=}\t{GSDw=}\t {min(GSDh,GSDw)=}')
         ## 36 * 8.8 / (8.8 * 3648)
         ## 36 * 13.2 / (8.8 * 5472)
         print("####################################################")
         print(f'le GSD calculé du film {self.input_video_filename} et de numero {self.line_number}  est : {min(GSDh,GSDw)}')
         print("####################################################")
-        return min(GSDh,GSDw)
+        detection_area_pixels= np.pi * ((self.detection_radius ) ** 2)
+        detection_area_meters = detection_area_pixels * (self.GSD_Calcul ** 2)
+        print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
+        print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
+        self.GSD_Calcul = min(GSDh,GSDw)
+        #return min(GSDh,GSDw)
         #hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
         #GSDw= hauteur de vol x largeur de capteur / longueur focale x largeur de l'image.
 
@@ -272,7 +275,7 @@ class DzianiBullage:
         #ax.text(1.7, 1.02, f'Date de la vidéo: {self.date_video}', transform=ax.transAxes, horizontalalignment='right', fontsize=10, color='black')
 
         if self.SAVE_PLOTS :
-            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.line_number}_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+            filename = f'Evolution_des_vitesses_au_cours_du_temps_{self.tag_file}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
             fig.savefig(filepath,dpi=self.DPI_SAVED_IMAGES)
 
@@ -288,12 +291,12 @@ class DzianiBullage:
 
     def save_trajet(self,masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage):
         self.draw_color_scale(frame, (200, 300), 500, 50)
-        cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 200), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
-        cv2.putText(frame, f'Date de la video: {self.date_video}', (2800, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
         current_time = frame_count / self.frames_per_second
         time_text = f"Duree: {current_time:.2f}s / {self.window_size_seconds:.2f}s"
         cv2.putText(frame, time_text, (70, 70), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+        cv2.putText(frame, f'Nombre de points suivis: {len(points_encore_suivis)}', (70, 150), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
+        cv2.putText(frame, f'{self.date_video} - {self.input_video_filename}', (70, 230), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 7)
 
 
         img = cv2.add(frame, masque_suivi)
@@ -301,7 +304,7 @@ class DzianiBullage:
             cv2.imshow('frame', img)
 
         if self.SAVE_PLOTS :
-            filename = f'Trajets_des_bulles_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+            filename = f'Trajets_des_bulles_{self.tag_file}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
             cv2.imwrite(filepath, img)
 
@@ -368,7 +371,7 @@ class DzianiBullage:
         # #Image avec la position du cercle de détection
         if debut_echantillonnage == 0 :
             cv2.circle(first_frame_copy, self.detection_center, self.detection_radius, 255, thickness= 2)
-            filename = f'Cercle_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
+            filename = f'Cercle_detection_{self.tag_file}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
             cv2.imwrite(filepath, first_frame_copy)
 
@@ -446,7 +449,7 @@ class DzianiBullage:
                 x_old_point, y_old_point = old.ravel()
                 distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
                 speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
-                speed_m_per_sec = speed_px_per_sec * self.gsd_hauteur  # Convertit la vitesse en m/sec
+                speed_m_per_sec = speed_px_per_sec * self.GSD_Calcul  # Convertit la vitesse en m/sec
 
                 #all_points.append(new)  # Stocker le point
                 all_X.append(x_new_point) # Stocker le X du point
@@ -607,6 +610,7 @@ class DzianiBullage:
         self.np_X =  np.load(self.results_np_X_filepath )
         self.np_Y =  np.load(self.results_np_Y_filepath )
         self.np_speeds =  np.load(self.results_np_speeds_filepath )
+
 
     def save_results_interpolation_numpy(self):
 
@@ -771,14 +775,180 @@ class DzianiBullage:
             cbar = plt.colorbar(contour, ax=ax, label='Speeds')
             ax.set_xlabel('X Axis')
             ax.set_ylabel('Y Axis')
-            ax.set_title('Interpolated Grid with Smoothing Applied')
+            ax.set_title(f'Interpolated Grid with Smoothing Applied \n{self.date_video}_{self.input_video_filename}')
+
 
             # Sauvegarder l'image résultante
-            filepath = self.output_path /  f'Interpolation_{self.date_video}.png'
+            filepath = self.output_path /  f'Interpolation_{self.tag_file}.png'
             plt.savefig(filepath, dpi=300)
             plt.close(fig)
 
         #return grid_X, self.grid_Y, self.smoothed_grid_speeds
+
+    def calcul_largeur_panache(self):
+        resolution = 200
+        # Dimensions
+        nb_rayons = 400
+        rayon_max = 100
+
+        print(f"{self.center_interpolation=}")
+
+        #self.center_interpolation
+        # self.np_X =  np.load(self.results_np_X_filepath )
+        # self.np_Y =  np.load(self.results_np_Y_filepath )
+        # self.np_speeds =  np.load(self.results_np_speeds_filepath )
+
+        # file_speeds = 'results_smoothed_grid_speeds_14_20s_5s_2024_04_08_DJI_0096.MOV.npy' #matrice des vitesses
+        # file_grid_X = 'results_grid_X_14_20s_5s_2024_04_08_DJI_0096.MOV.npy' #matrice des coordonnées X
+        # file_grid_Y = 'results_grid_Y_14_20s_5s_2024_04_08_DJI_0096.MOV.npy' #matrice des coordonnées Y
+
+        speeds= np.load(self.results_smoothed_grid_speeds_filepath )
+        grid_X = np.load(self.results_grid_X_filepath)
+        grid_Y = np.load(self.results_grid_Y_filepath)
+
+        grid_X_m = grid_X[0]*self.GSD_Calcul #axe des coordonnées X en m
+        grid_Y_m = grid_Y.T[0]*self.GSD_Calcul #axe des coordonnées Y en m
+
+
+        # Générer les angles pour les rayons uniformément répartis
+        angles = np.linspace(0, 2 * np.pi, nb_rayons, endpoint=False)
+
+        # Initialisation des listes pour stocker les coordonnées et les vitesses
+        coords_X = []
+        coords_Y = []
+        speeds_along_rays = []
+
+        # Boucle sur chaque angle
+        for angle in angles:
+            ray_X = []
+            ray_Y = []
+            ray_speeds = []
+
+            # Calculer les points le long du rayon pour chaque distance entre 1 et rayon_max
+            for r in range(1, rayon_max + 1):
+                x = int(self.center_interpolation[0] + r * np.cos(angle))
+                y = int(self.center_interpolation[1] + r * np.sin(angle))
+
+                # S'assurer que les indices sont dans les limites de la matrice speeds
+                if 0 <= x < speeds.shape[0] and 0 <= y < speeds.shape[1]:
+                    ray_X.append(x)
+                    ray_Y.append(y)
+                    ray_speeds.append(speeds[x, y])
+
+            # Stocker les résultats pour ce rayon
+            coords_X.append(ray_X)
+            coords_Y.append(ray_Y)
+            speeds_along_rays.append(ray_speeds)
+
+        # Tracer les rayons
+        plt.figure(figsize=(9, 9))
+        plt.imshow(speeds, cmap='Spectral_r', origin='lower')
+        plt.colorbar(label="Vitesse (m/s)")
+
+        for ray_X, ray_Y in zip(coords_X, coords_Y):
+            plt.plot(ray_Y, ray_X, 'gray', alpha=0.9, linewidth = 0.7)  # Attention aux indices [X, Y]
+
+        plt.scatter(self.center_interpolation[1], self.center_interpolation[0], color='red', label='Center', zorder=5)
+        plt.xlabel('Y (indice)')
+        plt.ylabel('X (indice)')
+        plt.legend()
+        plt.show()
+
+        center_x_m = grid_X_m[self.center_interpolation[0]]  # en mètres
+        center_y_m = grid_Y_m[self.center_interpolation[1]]  # en mètres
+
+        # Générer les angles pour les rayons uniformément répartis
+        angles = np.linspace(0, 2 * np.pi, nb_rayons, endpoint=False)
+
+        # Initialisation des listes pour stocker les distances et les vitesses le long des rayons
+        distances_along_rays = []
+        speeds_along_rays = []
+
+        # Boucle sur chaque angle
+        for angle in angles:
+            ray_distances = []
+            ray_speeds = []
+
+            # Calculer les points le long du rayon pour chaque distance entre 1 et rayon_max (en unités d'indices)
+            for r in range(1, rayon_max + 1):
+                x_index = int(self.center_interpolation[0] + r * np.cos(angle))
+                y_index = int(self.center_interpolation[1] + r * np.sin(angle))
+
+                # S'assurer que les indices sont dans les limites de la matrice speeds
+                if 0 <= x_index < speeds.shape[0] and 0 <= y_index < speeds.shape[1]:
+                    # Convertir les indices en coordonnées réelles en mètres
+                    x_m = grid_X_m[x_index]
+                    y_m = grid_Y_m[y_index]
+
+                    # Calculer la distance en mètres depuis le centre
+                    distance_m = np.sqrt((x_m - center_x_m)**2 + (y_m - center_y_m)**2)
+                    ray_distances.append(distance_m)
+
+                    # Extraire la vitesse correspondante
+                    ray_speeds.append(speeds[x_index, y_index])
+
+            # Stocker les résultats pour ce rayon
+            distances_along_rays.append(ray_distances)
+            speeds_along_rays.append(ray_speeds)
+
+        # Créer une grille commune de distances pour l'interpolation
+        distance_grid = np.linspace(0, max(max(d) for d in distances_along_rays), 100)
+
+        # Liste pour stocker les vitesses interpolées pour chaque rayon
+        interpolated_speeds = []
+
+        # Interpolation des vitesses sur la grille commune
+        for ray_distances, ray_speeds in zip(distances_along_rays, speeds_along_rays):
+            # Interpolation linéaire
+            interp_func = interp1d(ray_distances, ray_speeds, bounds_error=False, fill_value=np.nan)
+            interpolated_speed = interp_func(distance_grid)
+            interpolated_speeds.append(interpolated_speed)
+
+        # Calculer la médiane des vitesses (en ignorant les NaN)
+        median_speeds = np.nanmedian(interpolated_speeds, axis=0)
+
+        # S'assurer qu'il n'y a pas de NaN dans la médiane
+        median_speeds = np.nan_to_num(median_speeds)
+
+
+        # Lissage de la courbe médiane avec un spline
+        smoothing_spline = UnivariateSpline(distance_grid, median_speeds, s=0.001)  # Le paramètre "s" contrôle la douceur
+
+        # Trouver la valeur maximale de la courbe lissée
+        max_speed_index = np.argmax(smoothing_spline(distance_grid))
+        max_speed = smoothing_spline(distance_grid)[max_speed_index]
+        max_distance = distance_grid[max_speed_index]
+
+        # Tracer les courbes des rayons
+        fig=plt.figure(figsize=(12, 9))
+
+        for ray_distances, ray_speeds in zip(distances_along_rays, speeds_along_rays):
+            plt.plot(ray_distances, ray_speeds, alpha=0.2, color='grey', linewidth=0.7)  # Courbes individuelles avec transparence
+
+        # Tracer la courbe médiane
+        plt.plot(distance_grid, median_speeds, color='black', linewidth=2, label='Courbe médiane')
+
+        # Tracer la courbe médiane lissée
+        plt.plot(distance_grid, smoothing_spline(distance_grid), color='red', linewidth=2, label='Courbe médiane lissée')
+
+        # Tracer la barre verticale et annoter la valeur maximale
+        plt.axvline(x=max_distance, color='black', linestyle='--', label=f'Max à {max_distance:.2f} m')
+        plt.scatter([max_distance], [max_speed], color='white', zorder=5)
+        plt.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m', color='black', fontsize=20)
+
+        # Ajouter des détails au graphique
+        plt.title("Vitesse en fonction de la distance au centre")
+        plt.xlabel("Distance au centre (m)")
+        plt.ylabel("Vitesse (m/s)")
+        #plt.ylim(0,0.6)
+        plt.legend()
+        plt.grid(True)
+        plt.show()
+
+        # Sauvegarder l'image résultante
+        filepath = self.output_path /  f'Graph_final_{self.tag_file}.png'
+        plt.savefig(filepath, dpi=300)
+        plt.close(fig)
 
 
 def main():
@@ -788,6 +958,7 @@ def main():
     # Ajout de l'argument numero_ligne
     parser.add_argument('numero_ligne', type=int, help='Le numéro de ligne à traiter qui doit être un entier.')
     parser.add_argument('--file_analysis','-a',default=False, action='store_true', help='flag pour faire l\'analyse du fichier')
+    parser.add_argument('--largeur_panache','-l',default=False, action='store_true', help='flag pour calculer la largeur du panache')
 
     # Parsing des arguments
     args = parser.parse_args()
@@ -856,8 +1027,15 @@ def main():
 
     # Get data from video file
     dziani_bullage.get_video_data()
-    # On calcul le gsd qui devient le "bon" gsd pour la suite
-    dziani_bullage.gsd_hauteur = dziani_bullage.get_gsd()
+    # On calcul le gsd
+    dziani_bullage.get_gsd()
+
+    if args.largeur_panache:
+
+        with Timer(text="{name}: {:.4f} seconds", name="=> calcul largeur panache"):
+            dziani_bullage.calcul_largeur_panache()
+        #### On ne refait pas les calculs !!!
+        sys.exit()
 
     if args.file_analysis :
 
