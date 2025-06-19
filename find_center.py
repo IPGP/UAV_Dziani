@@ -300,7 +300,7 @@ def calcul_centre(video_file,seuils_classes_distances,SECONDS_TO_COMPUTE,decalag
 
         # la solution doit etre dans l'image
         # et  pas etre trop loin du center
-        if x>0 and x< frame_width and y > 0 and y < frame_height and math.dist(solution,detection_center)<800:
+        if x>0 and x< frame_width and y > 0 and y < frame_height and math.dist(solution,detection_center)<1500:
             filtered_solutions.append(solution)
             #plt.plot(x,y,color='red', marker='o', linestyle='dashed',
             #linewidth=2, markersize=3)

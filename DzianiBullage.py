@@ -46,7 +46,7 @@ class DzianiBullage:
 
     ## Analysis
     gsd_hauteur : float = 0
-    detection_diameter : int = 0
+    detection_radius : int = 0
     #interpolation_diameter: int = 0
     detection_center : tuple  = None
     colormap =  plt.cm.rainbow
@@ -102,7 +102,7 @@ class DzianiBullage:
         self.date_video = donnees['DATE_VIDEO']
         self.alti_abs_lac=donnees['ALTI_ABS_LAC']
         self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
-        self.detection_diameter = int(donnees['DIAMETRE_DETECTION'])
+        self.detection_radius = int(donnees['RAYON_DETECTION'])
         #self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
         self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
         self.alti_abs_lac = float(donnees['ALTI_ABS_LAC'])
@@ -138,7 +138,7 @@ class DzianiBullage:
 
 
         print(f'{self.video_path=}\n{self.date_video=}\n{self.gsd_hauteur=}\n'
-              f'{self.detection_diameter=}\n'
+              f'{self.detection_radius=}\n'
               f'{self.detection_center=}\n'
               f'{self.output_path}'
               )
@@ -147,7 +147,7 @@ class DzianiBullage:
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
 
-        detection_area_pixels= np.pi * ((self.detection_diameter / 2) ** 2)
+        detection_area_pixels= np.pi * ((self.detection_radius ) ** 2)
         detection_area_meters = detection_area_pixels * (self.gsd_hauteur ** 2)
         print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
         print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
@@ -363,11 +363,11 @@ class DzianiBullage:
         # Masque pour définir le cercle de détection
         masque_detection = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)  # Crée un masque de la même taille que l'image, mais en niveaux de gris
         # Dessine un cercle plein = cercle de détection sur le masque avec une valeur de 255 (blanc)
-        cv2.circle(masque_detection, self.detection_center, self.detection_diameter, 255, thickness=-1)
+        cv2.circle(masque_detection, self.detection_center, self.detection_radius, 255, thickness=-1)
 
         # #Image avec la position du cercle de détection
         if debut_echantillonnage == 0 :
-            cv2.circle(first_frame_copy, self.detection_center, self.detection_diameter, 255, thickness= 2)
+            cv2.circle(first_frame_copy, self.detection_center, self.detection_radius, 255, thickness= 2)
             filename = f'Cercle_detection_{self.date_video}_{self.window_size_seconds}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
             cv2.imwrite(filepath, first_frame_copy)
