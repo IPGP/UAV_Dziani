@@ -793,15 +793,6 @@ class DzianiBullage:
 
         print(f"{self.center_interpolation=}")
 
-        #self.center_interpolation
-        # self.np_X =  np.load(self.results_np_X_filepath )
-        # self.np_Y =  np.load(self.results_np_Y_filepath )
-        # self.np_speeds =  np.load(self.results_np_speeds_filepath )
-
-        # file_speeds = 'results_smoothed_grid_speeds_14_20s_5s_2024_04_08_DJI_0096.MOV.npy' #matrice des vitesses
-        # file_grid_X = 'results_grid_X_14_20s_5s_2024_04_08_DJI_0096.MOV.npy' #matrice des coordonnées X
-        # file_grid_Y = 'results_grid_Y_14_20s_5s_2024_04_08_DJI_0096.MOV.npy' #matrice des coordonnées Y
-
         speeds= np.load(self.results_smoothed_grid_speeds_filepath )
         grid_X = np.load(self.results_grid_X_filepath)
         grid_Y = np.load(self.results_grid_Y_filepath)
@@ -810,7 +801,7 @@ class DzianiBullage:
         grid_Y_m = grid_Y.T[0]*self.GSD_Calcul #axe des coordonnées Y en m
 
 
-        # Générer les angles pour les rayons uniformément répartis
+            # Générer les angles pour les rayons uniformément répartis
         angles = np.linspace(0, 2 * np.pi, nb_rayons, endpoint=False)
 
         # Initialisation des listes pour stocker les coordonnées et les vitesses
@@ -920,7 +911,7 @@ class DzianiBullage:
         max_distance = distance_grid[max_speed_index]
 
         # Tracer les courbes des rayons
-        fig=plt.figure(figsize=(12, 9))
+        fig = plt.figure(figsize=(12, 9))
 
         for ray_distances, ray_speeds in zip(distances_along_rays, speeds_along_rays):
             plt.plot(ray_distances, ray_speeds, alpha=0.2, color='grey', linewidth=0.7)  # Courbes individuelles avec transparence
@@ -937,14 +928,13 @@ class DzianiBullage:
         plt.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m', color='black', fontsize=20)
 
         # Ajouter des détails au graphique
-        plt.title("Vitesse en fonction de la distance au centre")
+        plt.title(f"Vitesse en fonction de la distance au centre\n{self.date_video} - {self.input_video_filename}")
         plt.xlabel("Distance au centre (m)")
         plt.ylabel("Vitesse (m/s)")
         #plt.ylim(0,0.6)
         plt.legend()
         plt.grid(True)
         plt.show()
-
         # Sauvegarder l'image résultante
         filepath = self.output_path /  f'Graph_final_{self.tag_file}.png'
         plt.savefig(filepath, dpi=300)
