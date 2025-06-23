@@ -21,6 +21,7 @@ from tqdm import trange
 from tqdm.contrib.concurrent import process_map
 from codetiming import Timer
 from utils import get_data_from_google_sheet
+import gc
 
 @dataclass
 class DzianiBullage:
@@ -46,6 +47,9 @@ class DzianiBullage:
     ## Analysis
     #gsd_hauteur : float = 0
     GSD_Calcul : float = 0
+    GSD_Calcul_H : float = 0
+    GSD_Calcul_W : float = 0
+
 
     detection_radius : int = 0
     #interpolation_diameter: int = 0
@@ -154,19 +158,20 @@ class DzianiBullage:
         #GSDh= hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
         # GSDh = self.distance_lac*self.sensor_data[0] / (self.sensor_data[2] * self.frame_height)
         # GSDw = self.distance_lac*self.sensor_data[1] / (self.sensor_data[2] * self.frame_width)
-        GSDh = self.distance_lac*self.sensor_height / (self.focal_distance * self.frame_height)
-        GSDw = self.distance_lac*self.sensor_width / (self.focal_distance * self.frame_width)
-        print(f'{self.sensor_height=}\t{self.sensor_width=}\t{self.frame_height=}\t{self.frame_width=}\t{GSDh=}\t{GSDw=}\t {min(GSDh,GSDw)=}')
-        ## 36 * 8.8 / (8.8 * 3648)
-        ## 36 * 13.2 / (8.8 * 5472)
+        # hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
+
+        self.GSD_Calcul_H = self.distance_lac*self.sensor_height / (self.focal_distance * self.frame_height)
+        self.GSD_Calcul_W = self.distance_lac*self.sensor_width / (self.focal_distance * self.frame_width)
+        print(f'{self.sensor_height=}\t{self.sensor_width=}\t{self.frame_height=}\t{self.frame_width=}\t{self.GSD_Calcul_H=}\t{self.GSD_Calcul_W=}\t {min(self.GSD_Calcul_H,self.GSD_Calcul_W)=}')
+
         print("####################################################")
-        print(f'le GSD calculé du film {self.input_video_filename} et de numero {self.line_number}  est : {min(GSDh,GSDw)}')
+        print(f'le GSD calculé du film {self.input_video_filename} et de numero {self.line_number}  est : {min(self.GSD_Calcul_H,self.GSD_Calcul_W)}')
         print("####################################################")
         detection_area_pixels= np.pi * ((self.detection_radius ) ** 2)
         detection_area_meters = detection_area_pixels * (self.GSD_Calcul ** 2)
         print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
         print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
-        self.GSD_Calcul = min(GSDh,GSDw)
+        self.GSD_Calcul = min(self.GSD_Calcul_H,self.GSD_Calcul_W)
         #return min(GSDh,GSDw)
         #hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
         #GSDw= hauteur de vol x largeur de capteur / longueur focale x largeur de l'image.
@@ -204,20 +209,6 @@ class DzianiBullage:
         # Ajouter des annotations pour la vitesse minimale et maximale
         cv2.putText(frame, f'{self.VITESSE_MIN_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 10, position_echelle_couleur[1] + hauteur_echelle_couleur), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
         cv2.putText(frame, f'{self.VITESSE_MAX_CLASSES_VITESSES} m/s', (position_echelle_couleur[0] + largeur_echelle_couleur + 5, position_echelle_couleur[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 4)
-
-
-
-    def calculate_speed(self,point1, point2):
-        """
-        Calcule la vitesse entre deux points sur une image en fonction du FPS (frames per second)
-        frames_per_second : nombre de frames par seconde de la vidéo
-        """
-        # Calculer la distance euclidienne entre les deux points
-        distance = np.sqrt((point2[0] - point1[0]) ** 2 + (point2[1] - point1[1]) ** 2)
-        # Le temps entre les frames est l'inverse du FPS
-        time_interval = 1 / self.frames_per_second
-        # La vitesse est distance par temps (pixels par seconde dans ce cas)
-        return distance / time_interval
 
 
 
@@ -447,9 +438,16 @@ class DzianiBullage:
             for i, (new, old) in enumerate(zip(points_encore_suivis, points_initiaux_encore_suivis)):
                 x_new_point, y_new_point = new.ravel()
                 x_old_point, y_old_point = old.ravel()
-                distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
-                speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
-                speed_m_per_sec = speed_px_per_sec * self.GSD_Calcul  # Convertit la vitesse en m/sec
+
+                distance_en_m = np.sqrt(
+                    ((x_new_point - x_old_point)*self.GSD_Calcul) ** 2 +
+                    ((y_new_point - y_old_point)*self.GSD_Calcul) ** 2)
+
+                speed_m_per_sec = distance_en_m / self.frame_time  # Convertit la vitesse en m/sec
+
+                # distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
+                # speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
+                # speed_m_per_sec = speed_px_per_sec * self.GSD_Calcul  # Convertit la vitesse en m/sec
 
                 #all_points.append(new)  # Stocker le point
                 all_X.append(x_new_point) # Stocker le X du point
@@ -476,7 +474,7 @@ class DzianiBullage:
                     total_times[i] = 0
 
                 # Mise à jour des distances et des temps
-                distances_totales[i] += distance
+                distances_totales[i] += distance_en_m
                 total_times[i] += 1
 
                 #initial_positions = positions_initiales.copy()
@@ -669,8 +667,6 @@ class DzianiBullage:
         positions_Y = self.np_Y
         speeds = self.np_speeds
 
-
-
         ## Echantillonnage des données pour l'interpolation en fonction de la densité des points
         with Timer(text="{name}: {:.4f} seconds", name="=> Echantillonnage des données pour l interpolation en fonction de la densité des points"):
             # Découper l'image en cellules d'échantillonnage
@@ -724,12 +720,12 @@ class DzianiBullage:
             fig, ax = plt.subplots(figsize=(10, 8))
             # Tracer les points avec une colormap pour les vitesses
             sc = ax.scatter(sampled_positions_X, sampled_positions_Y, c=sampled_speeds, cmap=self.colormap, vmin=0.1, vmax=0.4, s=10, edgecolor='none')
-            plt.colorbar(sc, ax=ax, label='Speed')
+            plt.colorbar(sc, ax=ax, label='Speed (m/s)')
             plt.gca().invert_yaxis()
             # Ajouter des étiquettes et un titre
             ax.set_xlabel('X Position')
             ax.set_ylabel('Y Position')
-            ax.set_title('Scatter Plot of sampled_positions with Speed Colormap')
+            ax.set_title('Scatter Plot of sampled_positions with Speed Colormap \n{self.date_video}_{self.input_video_filename}')
             # Ajuster les limites des axes si nécessaire
             ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
             ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
@@ -772,7 +768,7 @@ class DzianiBullage:
             fig, ax = plt.subplots(figsize=(10, 8))
             plt.gca().invert_yaxis()
             contour = ax.contourf(self.grid_X, self.grid_Y, self.smoothed_grid_speeds, cmap=self.colormap, levels=100, vmin=0.1, vmax=0.4)
-            cbar = plt.colorbar(contour, ax=ax, label='Speeds')
+            cbar = plt.colorbar(contour, ax=ax, label='Speeds (m/s)')
             ax.set_xlabel('X Axis')
             ax.set_ylabel('Y Axis')
             ax.set_title(f'Interpolated Grid with Smoothing Applied \n{self.date_video}_{self.input_video_filename}')
@@ -791,7 +787,13 @@ class DzianiBullage:
         nb_rayons = 400
         rayon_max = 100
 
-        print(f"{self.center_interpolation=}")
+
+
+        centre_interpX = 200 - (self.detection_center[0]) / (self.frame_width / 200)
+        centre_interpY = 200 - (self.detection_center[1]) / (self.frame_height / 200)
+
+
+        print(f"{self.center_interpolation=} \t Avec calcul {centre_interpX=}, {centre_interpY=}")
 
         speeds= np.load(self.results_smoothed_grid_speeds_filepath )
         grid_X = np.load(self.results_grid_X_filepath)
@@ -799,6 +801,8 @@ class DzianiBullage:
 
         grid_X_m = grid_X[0]*self.GSD_Calcul #axe des coordonnées X en m
         grid_Y_m = grid_Y.T[0]*self.GSD_Calcul #axe des coordonnées Y en m
+        # grid_X_m = grid_X[0]*self.GSD_Calcul #axe des coordonnées X en m
+        # grid_Y_m = grid_Y.T[0]*self.GSD_Calcul #axe des coordonnées Y en m
 
 
             # Générer les angles pour les rayons uniformément répartis
@@ -840,6 +844,7 @@ class DzianiBullage:
             plt.plot(ray_Y, ray_X, 'gray', alpha=0.9, linewidth = 0.7)  # Attention aux indices [X, Y]
 
         plt.scatter(self.center_interpolation[1], self.center_interpolation[0], color='red', label='Center', zorder=5)
+
         plt.xlabel('Y (indice)')
         plt.ylabel('X (indice)')
         plt.legend()
@@ -1040,6 +1045,8 @@ def main():
 
         with Timer(text="{name}: {:.4f} seconds", name="=> save_results_numpy"):
             dziani_bullage.save_results_numpy()
+        sys.exit()
+
 
     print("############################")
     print("##### INTERPOLATION #######")

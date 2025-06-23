@@ -1,9 +1,9 @@
 #!/bin/sh
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=128  # MPI per node
+#SBATCH --ntasks-per-node=64  # MPI per node
 #SBATCH --partition=ncpum
 #SBATCH --output /gpfs/users/%u/logs/slurm-openmp-%j.out
-#SBATCH --mail-user=benard@ipgp.fr
+#SBATCH --mail-user=%u@ipgp.fr
 #SBATCH --mail-type=END,FAIL
 
 

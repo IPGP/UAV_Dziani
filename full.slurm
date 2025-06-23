@@ -1,9 +1,9 @@
 #!/bin/sh
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=128  # MPI per node
+#SBATCH --ntasks-per-node=32  # MPI per node
 #SBATCH --partition=ncpum
 #SBATCH --output /gpfs/users/%u/logs/slurm-openmp-%j.out
-#SBATCH --mail-user=bonaime@ipgp.fr
+#SBATCH --mail-user=%u@ipgp.fr
 #SBATCH --mail-type=END,FAIL
 
 
@@ -13,4 +13,8 @@ python3 -V
 
 #On lance avec l'option $1 qui est le numéro de ligne à traiter et option potentiel -a pour
 # le 2eme parametre pour analyser le fichier
-python3 DzianiBullage.py $1 $2
+python3 DzianiBullage.py $1 -a
+python3 DzianiBullage.py $1
+python3 DzianiBullage.py $1 -l
+
+
