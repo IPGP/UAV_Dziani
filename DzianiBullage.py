@@ -25,6 +25,9 @@ from utils import get_data_from_google_sheet
 from tslearn.barycenters import euclidean_barycenter
 import gc
 
+DEBUG = False
+#DEBUG = True
+
 @dataclass
 class DzianiBullage:
 
@@ -61,20 +64,22 @@ class DzianiBullage:
     output_path : Path = ""
     root_data_path : Path = Path("./")
 
-    CELL_SIZE: int =  500
-    NB_BUBBLES: int = 3000
+    CELL_SIZE : int =  500
+    NB_BUBBLES : int = 3000
+    MIN_DIST_m : float = 2
+    MAX_SPEED_ms : float = 3
 
     # images DPI:
-    DPI_SAVED_IMAGES: int = None
+    DPI_SAVED_IMAGES : int = None
 
     window_size_seconds : int = 20 #  seconds
-    windows_shift_seconds: int = 5 # seconds
+    windows_shift_seconds : int = 5 # seconds
 
     ##### Si DISPLAY_PLOTS est vrai, le graphique est affiché à l'écran
-    DISPLAY_PLOTS: bool = False
+    DISPLAY_PLOTS : bool = False
 
     ##### Si SAVE_PLOTS est vrai, le graphique est sauvegardé dans le répertoire spécifié
-    SAVE_PLOTS: bool = True
+    SAVE_PLOTS : bool = True
 
 
     VITESSE_MIN_CLASSES_VITESSES : float = 0.1  # m/s
@@ -381,7 +386,10 @@ class DzianiBullage:
         all_Y = [] # Liste pour stocker toutes les positions Y des points
         speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
         speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
+        indices_particules_immobiles = [] # Indices des points qui n'ont pas beaucoup bougé pendant la fenetre
+        indices_particules_high_speed = [] # Indices des points qui ont été trop vite
 
+        points_suivis_bruts ={}
 
         status_update_seconds= 3
 
@@ -451,15 +459,30 @@ class DzianiBullage:
                 # speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
                 # speed_m_per_sec = speed_px_per_sec * self.GSD_Calcul  # Convertit la vitesse en m/sec
 
+                #print(f'{i=}\t{distance_en_m=}')
+
                 #all_points.append(new)  # Stocker le point
                 all_X.append(x_new_point) # Stocker le X du point
                 all_Y.append(y_new_point) # Stocker le Y du point
+
+                if i not in points_suivis_bruts :
+                    points_suivis_bruts[i] = np.array([x_new_point,y_new_point,speed_m_per_sec])
+                else :
+                    points_suivis_bruts[i]
 
                 speeds_m_per_sec.append(speed_m_per_sec)
                 #print(f'{speed_m_per_sec=}')
                 rayon_cercle_largeur_ligne = 2
 
                 color = self.speed_to_color(speed_m_per_sec)
+
+                # Speed control !
+                if speed_m_per_sec >= self.MAX_SPEED_ms:
+                    print(f'La particule {i} va trop vite !  {speed_m_per_sec} m/s')
+                    indices_particules_high_speed.append(i)
+                    color = (0,0,255)
+                    rayon_cercle_largeur_ligne = 40
+
                 #cv2.line(masque_suivi, (int(x_newPoint), int(y_newPoint)), (int(x_oldPoint), int(y_oldPoint)), color, rayon_cercle_largeur_ligne)
                 if debut_echantillonnage == 0 :
                     cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
@@ -476,11 +499,15 @@ class DzianiBullage:
                     total_times[i] = 0
 
                 # Mise à jour des distances et des temps
-                distances_totales[i] += distance_en_m
+                distances_totales[i] = distances_totales[i] + distance_en_m
                 total_times[i] += 1
+
 
                 #initial_positions = positions_initiales.copy()
                 #initial_positions = np.array(positions_initiales)
+
+
+
 
 
             # on sauve l'image à la derniere frame pour début_echantillonnage = 0
@@ -490,10 +517,29 @@ class DzianiBullage:
             previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2 )
 
+        # On trouve si il y en a les indices des particules "immobiles" sur la plateforme
+        for (i, distance_tup) in enumerate(distances_totales.items()):
+            distance = distance_tup[1]
+
+            if distance < self.MIN_DIST_m :
+                indices_particules_immobiles.append(i)
+                print('#################')
+                print(f'La particule {i} a parcouru {distance} mètre qui est < {self.MIN_DIST_m}')
+                print('#################')
+
         video_file.release()
+        if DEBUG:
+            sys.exit()
 
         #print(f'Fin traitement video for offset {debut_echantillonnage:03}')
 
+        # filtrage des particules qui ont parcouru peu de distance
+        #  ou qui ont fait des exces de vitesse
+        # for indice in indices_particules_immobiles:
+        #     del speed_m_per_sec_par_trajet[indice]
+
+        # for indice in indices_particules_high_speed:
+        #     del speed_m_per_sec_par_trajet[indice]
 
         #Vitesses au cours du temps
         vitesses_moyennes = {}
@@ -822,6 +868,7 @@ class DzianiBullage:
         masque_detection = np.zeros((self.frame_height,self.frame_width), dtype=np.uint8)  # Crée un masque de la même taille que l'image, mais en niveaux de gris
         # Dessine un cercle plein (rayon 500) sur le masque avec une valeur de 255 (blanc)
         cv2.circle(masque_detection, detection_center, detection_diameter, 255, thickness=-1)
+
 
         # Decalage du film pour se mettre au bon endroit pour les calculs
         video_file.set(cv2.CAP_PROP_POS_FRAMES, decalage * self.frames_per_second)
@@ -1257,33 +1304,34 @@ class DzianiBullage:
         max_distance = distance_grid[max_speed_index]
 
         # Tracer les courbes des rayons
-        fig = plt.figure(figsize=(12, 9))
+        fig, ax = plt.subplots(figsize=(12, 9))
 
         for ray_distances, ray_speeds in zip(distances_along_rays, speeds_along_rays):
-            plt.plot(ray_distances, ray_speeds, alpha=0.2, color='grey', linewidth=0.7)  # Courbes individuelles avec transparence
+            ax.plot(ray_distances, ray_speeds, alpha=0.2, color='grey', linewidth=0.7)  # Courbes individuelles avec transparence
 
         # Tracer la courbe médiane
-        plt.plot(distance_grid, median_speeds, color='black', linewidth=2, label='Courbe médiane')
+        ax.plot(distance_grid, median_speeds, color='black', linewidth=2, label='Courbe médiane')
 
         # Tracer la courbe médiane lissée
-        plt.plot(distance_grid, smoothing_spline(distance_grid), color='red', linewidth=2, label='Courbe médiane lissée')
+        ax.plot(distance_grid, smoothing_spline(distance_grid), color='red', linewidth=2, label='Courbe médiane lissée')
 
         # Tracer la barre verticale et annoter la valeur maximale
-        plt.axvline(x=max_distance, color='black', linestyle='--', label=f'Max à {max_distance:.2f} m')
-        plt.scatter([max_distance], [max_speed], color='white', zorder=5)
-        plt.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m', color='black', fontsize=20)
+        ax.axvline(x=max_distance, color='black', linestyle='--', label=f'Max à {max_distance:.2f} m')
+        ax.scatter([max_distance], [max_speed], color='white', zorder=5)
+        ax.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m', color='black', fontsize=20)
 
         # Ajouter des détails au graphique
-        plt.title(f"Vitesse en fonction de la distance au centre\n{self.date_video} - {self.input_video_filename}")
-        plt.xlabel("Distance au centre (m)")
-        plt.ylabel("Vitesse (m/s)")
-        #plt.ylim(0,0.6)
-        plt.legend()
-        plt.grid(True)
+        ax.title(f"Vitesse en fonction de la distance au centre\n{self.date_video} - {self.input_video_filename}")
+        ax.xlabel("Distance au centre (m)")
+        ax.ylabel("Vitesse (m/s)")
+        ax.ylim(0,0.5)
+        ax.legend()
+        ax.grid(True)
+
         plt.show()
         # Sauvegarder l'image résultante
         filepath = self.output_path /  f'Graph_final_{self.tag_file}.png'
-        plt.savefig(filepath, dpi=300)
+        fig.savefig(filepath, dpi=300)
         plt.close(fig)
 
 
@@ -1318,9 +1366,10 @@ def main():
     else:
         cpu_nb = cpu_count()-1
 
-    print(f'Using {cpu_nb=} CPU')
+    if DEBUG:
+        cpu_nb=1
 
-    duree_fenetre_analyse_seconde = 20
+    print(f'Using {cpu_nb=} CPU')
 
 
     # Get parameters from a shared google sheet
@@ -1370,12 +1419,6 @@ def main():
                 dziani_bullage.calcul_centre_panache()
         sys.exit()
 
-    if args.largeur_panache:
-
-        with Timer(text="{name}: {:.4f} seconds", name="=> calcul largeur panache"):
-            dziani_bullage.calcul_largeur_panache()
-        sys.exit()
-
     if args.file_analysis :
 
         with Timer(text="{name}: {:.4f} seconds", name="=> video_file_analysis"):
@@ -1415,6 +1458,7 @@ def main():
 
         print(datetime.datetime.now())
         sys.exit()
+
 
     if args.largeur_panache:
 
