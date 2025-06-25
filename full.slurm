@@ -9,7 +9,6 @@
 
 cd /gpfs/scratch/bonaime/git/UAV_Dziani
 source .venv/bin/activate
-python3 -V
 
 
 # Analyse du film

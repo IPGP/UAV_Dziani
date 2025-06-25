@@ -24,9 +24,17 @@ from codetiming import Timer
 from utils import get_data_from_google_sheet
 from tslearn.barycenters import euclidean_barycenter
 import gc
+from typing import NamedTuple
 
 DEBUG = False
 #DEBUG = True
+
+
+class trajet_struct(NamedTuple):
+    x: float
+    y: float
+    speed: float
+    debut_echantillonnage: int
 
 @dataclass
 class DzianiBullage:
@@ -66,8 +74,8 @@ class DzianiBullage:
 
     CELL_SIZE : int =  500
     NB_BUBBLES : int = 3000
-    MIN_DIST_m : float = 2
-    MAX_SPEED_ms : float = 2
+    MIN_DIST_m : float = 3
+    MAX_SPEED_ms : float = 1
 
     # images DPI:
     DPI_SAVED_IMAGES : int = None
@@ -170,6 +178,7 @@ class DzianiBullage:
         self.GSD_Calcul_H = self.distance_lac*self.sensor_height / (self.focal_distance * self.frame_height)
         self.GSD_Calcul_W = self.distance_lac*self.sensor_width / (self.focal_distance * self.frame_width)
         print(f'{self.sensor_height=}\t{self.sensor_width=}\t{self.frame_height=}\t{self.frame_width=}\t{self.GSD_Calcul_H=}\t{self.GSD_Calcul_W=}\t {min(self.GSD_Calcul_H,self.GSD_Calcul_W)=}')
+        self.GSD_Calcul = min(self.GSD_Calcul_H,self.GSD_Calcul_W)
 
         print("####################################################")
         print(f'le GSD calculé du film {self.input_video_filename} et de numero {self.line_number}  est : {min(self.GSD_Calcul_H,self.GSD_Calcul_W)}')
@@ -178,8 +187,7 @@ class DzianiBullage:
         detection_area_meters = detection_area_pixels * (self.GSD_Calcul ** 2)
         print(f"L'aire de la zone de detection est de {detection_area_pixels:.2f} pixels")
         print(f"L'aire de la zone de detection est de {detection_area_meters:.2f} m²")
-        self.GSD_Calcul = min(self.GSD_Calcul_H,self.GSD_Calcul_W)
-        #return min(GSDh,GSDw)
+
         #hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
         #GSDw= hauteur de vol x largeur de capteur / longueur focale x largeur de l'image.
 
@@ -455,45 +463,15 @@ class DzianiBullage:
 
                 speed_m_per_sec = distance_en_m / self.frame_time  # Convertit la vitesse en m/sec
 
-                # distance = np.sqrt((x_new_point - x_old_point) ** 2 + (y_new_point - y_old_point) ** 2)
-                # speed_px_per_sec = np.linalg.norm([x_new_point - x_old_point, y_new_point - y_old_point]) / self.frame_time  # Calcule la vitesse en px/sec
-                # speed_m_per_sec = speed_px_per_sec * self.GSD_Calcul  # Convertit la vitesse en m/sec
 
-                #print(f'{i=}\t{distance_en_m=}')
 
-                #all_points.append(new)  # Stocker le point
-                all_X.append(x_new_point) # Stocker le X du point
-                all_Y.append(y_new_point) # Stocker le Y du point
-
+                # pour la particule i, points_suivis_bruts contient,
+                # la position du nouveau point, sa vitesse et debut_echantillonnage
+                new_trajet = trajet_struct(x=x_new_point,y=y_new_point,speed=speed_m_per_sec,debut_echantillonnage=debut_echantillonnage)
                 if i not in points_suivis_bruts :
-                    points_suivis_bruts[i] = np.array([x_new_point,y_new_point,speed_m_per_sec])
+                    points_suivis_bruts[i] =[new_trajet]
                 else :
-                    points_suivis_bruts[i]
-
-                speeds_m_per_sec.append(speed_m_per_sec)
-                #print(f'{speed_m_per_sec=}')
-                rayon_cercle_largeur_ligne = 2
-
-                color = self.speed_to_color(speed_m_per_sec)
-
-                #limite 7cm / frame
-
-                # Speed control !
-                if speed_m_per_sec >= self.MAX_SPEED_ms:
-                    print(f'La particule {i} va trop vite !  {speed_m_per_sec} m/s')
-                    indices_particules_high_speed.append(i)
-                    color = (0,0,255)
-                    rayon_cercle_largeur_ligne = 40
-
-                #cv2.line(masque_suivi, (int(x_newPoint), int(y_newPoint)), (int(x_oldPoint), int(y_oldPoint)), color, rayon_cercle_largeur_ligne)
-                if debut_echantillonnage == 0 :
-                    cv2.circle(masque_suivi, (int(x_new_point), int(y_new_point)), rayon_cercle_largeur_ligne, color, -1)
-                #cv2.circle(frame, (int(x_newPoint), int(y_newPoint)), rayon_cercle_largeur_ligne, color, -1)
-
-                if i not in speed_m_per_sec_par_trajet:
-                    speed_m_per_sec_par_trajet[i] = []
-                speed_m_per_sec_par_trajet[i].append(speed_m_per_sec)
-
+                    points_suivis_bruts[i].append(new_trajet)
 
                 # Initialisation s'ils n'existent pas déjà
                 if i not in distances_totales:
@@ -505,43 +483,90 @@ class DzianiBullage:
                 total_times[i] += 1
 
 
-                #initial_positions = positions_initiales.copy()
-                #initial_positions = np.array(positions_initiales)
-
-
-
-
-
-            # on sauve l'image à la derniere frame pour début_echantillonnage = 0
-            if debut_echantillonnage == 0 and frame_count == frames_per_window -1 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
-                self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
-
             previous_frame_gray = frame_gray.copy()
             positions_initiales = points_encore_suivis.reshape(-1, 1, 2 )
 
-        # On trouve si il y en a les indices des particules "immobiles" sur la plateforme
-        for (i, distance_tup) in enumerate(distances_totales.items()):
-            distance = distance_tup[1]
-
-            if distance < self.MIN_DIST_m :
-                indices_particules_immobiles.append(i)
-                print('#################')
-                print(f'La particule {i} a parcouru {distance} mètre qui est < {self.MIN_DIST_m}')
-                print('#################')
-
+        # Fin traitement du film
         video_file.release()
-        if DEBUG:
-            sys.exit()
+
+        if DEBUG :
+            print('###### DEBUG ICI ###########')
+            __import__("IPython").embed()
+
+        ### filtrage des particules qui ont parcouru peu de distance
+        ###  ou qui ont fait des exces de vitesse
+
+
+        # Speed control !
+        # for indice in points_suivis_bruts:
+        #     tableau_value = points_suivis_bruts[indice]
+
+        for max_speed in np.arange(0.4, 3, 0.2) :
+            self.MAX_SPEED_ms = max_speed
+
+            nb_exces_de_vitesse=0
+            for indice, particule in points_suivis_bruts.items():
+                #print(indice)
+                for trajet in particule:
+                    if trajet.speed >= self.MAX_SPEED_ms:
+                        #print(f'La particule {indice} va trop vite !  {trajet.speed} m/s > {self.MAX_SPEED_ms} - {trajet.speed*self.frame_time/self.GSD_Calcul} pixels en une frame')
+                        indices_particules_high_speed.append(indice)
+                        # on break car une seule vitesse excessive suffit pour virer la particule
+                        nb_exces_de_vitesse+=1
+                        break
+            print(f'Avec max_speed = {self.MAX_SPEED_ms}m/s <=> {self.MAX_SPEED_ms*self.frame_time/self.GSD_Calcul}px/frame on retire {nb_exces_de_vitesse}/{len(points_suivis_bruts)} particules')
+
+
+        # for distance in [2,2.5,3,3.5,4,4.5,5] :
+
+        #     self.MIN_DIST_m=distance
+        nb_particules_immobiles = 0
+        # On trouve si il y en a les indices des particules "immobiles" sur la plateforme
+        for (indice, distance_tup) in enumerate(distances_totales.items()):
+            #print(distance_tup)
+            distance = distance_tup[1]
+            #print(distance)
+            if distance < self.MIN_DIST_m :
+                indices_particules_immobiles.append(indice)
+                #print('#################')
+                #print(f'La particule {indice} a parcouru {distance} mètre qui est < {self.MIN_DIST_m}')
+                #print('#################')
+                nb_particules_immobiles=nb_particules_immobiles+1
+
+        print(f'Pour {self.MIN_DIST_m=}, {nb_particules_immobiles}/{len(distances_totales)} particules \\\
+            ont été retirées car distance parcourue trop courte')
+
+
+        rayon_cercle_largeur_ligne = 2
+        masque_suivi = np.zeros_like(first_frame)
+        if len(masque_suivi.shape) == 2 or masque_suivi.shape[2] == 1:  # mask est en niveaux de gris
+            masque_suivi = cv2.cvtColor(masque_detection, cv2.COLOR_GRAY2BGR)
+
+        for indice, particule in points_suivis_bruts.items():
+            for trajet in particule:
+                if (indice not in indices_particules_immobiles) and (indice not in indices_particules_high_speed):
+                    all_X.append(trajet.x)
+                    all_Y.append(trajet.y)
+                    speeds_m_per_sec.append(trajet.speed)
+                    print(f'Ajout {trajet.x}, {trajet.y}, {trajet.speed}')
+
+                    if indice not in speed_m_per_sec_par_trajet:
+                        speed_m_per_sec_par_trajet[i] = []
+                    speed_m_per_sec_par_trajet[i].append(trajet.speed)
+
+                    if trajet.debut_echantillonnage == 0 :
+                        #print(f'trajet {indice} {int(x)},{int(y)},{speed}')
+                        color = self.speed_to_color(trajet.speed)
+                        cv2.circle(masque_suivi, (int(trajet.x), int(trajet.y)), rayon_cercle_largeur_ligne, color, -1)
+                    #cv2.circle(frame, (int(x_newPoint), int(y_newPoint)), rayon_cercle_largeur_ligne, color, -1)
+
+        # on sauve l'image des tajets pour la premiere fenetre (début_echantillonnage = 0)
+        if self.SAVE_PLOTS or self.DISPLAY_PLOTS:
+            self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
+
 
         #print(f'Fin traitement video for offset {debut_echantillonnage:03}')
 
-        # filtrage des particules qui ont parcouru peu de distance
-        #  ou qui ont fait des exces de vitesse
-        # for indice in indices_particules_immobiles:
-        #     del speed_m_per_sec_par_trajet[indice]
-
-        # for indice in indices_particules_high_speed:
-        #     del speed_m_per_sec_par_trajet[indice]
 
         #Vitesses au cours du temps
         vitesses_moyennes = {}
@@ -612,6 +637,9 @@ class DzianiBullage:
     def video_file_analysis(self):
         print("Working on the video file ")
         array_arguments_for_calculer_vitesse_bulles =  list(range(0, self.movie_length_seconds - self.window_size_seconds, self.windows_shift_seconds))
+
+        if DEBUG :
+            self.calculer_vitesse_bulles( array_arguments_for_calculer_vitesse_bulles[0])
 
         with Pool(processes=self.cpu_nb) as pool:
             # Utiliser pool.map pour appliquer la fonction calculer_vitesse_bulles à chaque élément
@@ -1179,8 +1207,8 @@ class DzianiBullage:
 
 
 
-        centre_interpX = 200 - (self.detection_center[0]) / (self.frame_width / 200)
-        centre_interpY = 200 - (self.detection_center[1]) / (self.frame_height / 200)
+        centre_interpX = resolution - (self.detection_center[0]) / (self.frame_width / resolution)
+        centre_interpY = resolution - (self.detection_center[1]) / (self.frame_height / resolution)
 
 
         print(f"{self.center_interpolation=} \t Avec calcul {centre_interpX=}, {centre_interpY=}")
@@ -1368,8 +1396,6 @@ def main():
     else:
         cpu_nb = cpu_count()-1
 
-    if DEBUG:
-        cpu_nb=1
 
     print(f'Using {cpu_nb=} CPU')
     print(f'ligne no : {args.numero_ligne} ')
@@ -1411,6 +1437,8 @@ def main():
     root_data_path = Path(root_data_path)
     output_path = Path(output_path)
 
+    if DEBUG:
+        cpu_nb=1
 
     dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,output_path=output_path,
                                     root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
@@ -1420,6 +1448,7 @@ def main():
     dziani_bullage.get_video_data()
     # On calcul le gsd
     dziani_bullage.get_gsd()
+
 
     if args.find_center :
         with Timer(text="{name}: {:.4f} seconds", name="=> calcul centre panache"):
