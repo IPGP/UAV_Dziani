@@ -67,7 +67,7 @@ class DzianiBullage:
     CELL_SIZE : int =  500
     NB_BUBBLES : int = 3000
     MIN_DIST_m : float = 2
-    MAX_SPEED_ms : float = 3
+    MAX_SPEED_ms : float = 2
 
     # images DPI:
     DPI_SAVED_IMAGES : int = None
@@ -475,6 +475,8 @@ class DzianiBullage:
                 rayon_cercle_largeur_ligne = 2
 
                 color = self.speed_to_color(speed_m_per_sec)
+
+                #limite 7cm / frame
 
                 # Speed control !
                 if speed_m_per_sec >= self.MAX_SPEED_ms:
@@ -1321,14 +1323,14 @@ class DzianiBullage:
         ax.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m', color='black', fontsize=20)
 
         # Ajouter des détails au graphique
-        ax.title(f"Vitesse en fonction de la distance au centre\n{self.date_video} - {self.input_video_filename}")
-        ax.xlabel("Distance au centre (m)")
-        ax.ylabel("Vitesse (m/s)")
-        ax.ylim(0,0.5)
+        ax.set_title(f"Vitesse en fonction de la distance au centre\n{self.date_video} - {self.input_video_filename}")
+        ax.set_xlabel("Distance au centre (m)")
+        ax.set_ylabel("Vitesse (m/s)")
+        ax.set_ylim(0,0.5)
         ax.legend()
         ax.grid(True)
 
-        plt.show()
+        #plt.show()
         # Sauvegarder l'image résultante
         filepath = self.output_path /  f'Graph_final_{self.tag_file}.png'
         fig.savefig(filepath, dpi=300)
@@ -1370,6 +1372,11 @@ def main():
         cpu_nb=1
 
     print(f'Using {cpu_nb=} CPU')
+    print(f'ligne no : {args.numero_ligne} ')
+    if DEBUG :
+        print('##############################################@')
+        print('################ MODE DEBUG ##################@')
+        print('##############################################@')
 
 
     # Get parameters from a shared google sheet
