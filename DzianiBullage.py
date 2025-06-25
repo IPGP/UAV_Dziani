@@ -463,15 +463,15 @@ class DzianiBullage:
 
                 speed_m_per_sec = distance_en_m / self.frame_time  # Convertit la vitesse en m/sec
 
-
-
                 # pour la particule i, points_suivis_bruts contient,
-                # la position du nouveau point, sa vitesse et debut_echantillonnage
+                # la position du nouveau point (x,y), sa vitesse et debut_echantillonnage
                 new_trajet = trajet_struct(x=x_new_point,y=y_new_point,speed=speed_m_per_sec,debut_echantillonnage=debut_echantillonnage)
                 if i not in points_suivis_bruts :
                     points_suivis_bruts[i] =[new_trajet]
+                    #print(f'Ajout de {new_trajet=} a points_suivis_bruts')
                 else :
                     points_suivis_bruts[i].append(new_trajet)
+                    #print(f'Ajout de {new_trajet=} a points_suivis_bruts')
 
                 # Initialisation s'ils n'existent pas déjà
                 if i not in distances_totales:
@@ -489,9 +489,6 @@ class DzianiBullage:
         # Fin traitement du film
         video_file.release()
 
-        if DEBUG :
-            print('###### DEBUG ICI ###########')
-            __import__("IPython").embed()
 
         ### filtrage des particules qui ont parcouru peu de distance
         ###  ou qui ont fait des exces de vitesse
@@ -501,20 +498,20 @@ class DzianiBullage:
         # for indice in points_suivis_bruts:
         #     tableau_value = points_suivis_bruts[indice]
 
-        for max_speed in np.arange(0.4, 3, 0.2) :
-            self.MAX_SPEED_ms = max_speed
+        # for max_speed in np.arange(0.4, 3, 0.2) :
+        #     self.MAX_SPEED_ms = max_speed
 
-            nb_exces_de_vitesse=0
-            for indice, particule in points_suivis_bruts.items():
-                #print(indice)
-                for trajet in particule:
-                    if trajet.speed >= self.MAX_SPEED_ms:
-                        #print(f'La particule {indice} va trop vite !  {trajet.speed} m/s > {self.MAX_SPEED_ms} - {trajet.speed*self.frame_time/self.GSD_Calcul} pixels en une frame')
-                        indices_particules_high_speed.append(indice)
-                        # on break car une seule vitesse excessive suffit pour virer la particule
-                        nb_exces_de_vitesse+=1
-                        break
-            print(f'Avec max_speed = {self.MAX_SPEED_ms}m/s <=> {self.MAX_SPEED_ms*self.frame_time/self.GSD_Calcul}px/frame on retire {nb_exces_de_vitesse}/{len(points_suivis_bruts)} particules')
+        nb_exces_de_vitesse=0
+        for indice, particule in points_suivis_bruts.items():
+            #print(indice)
+            for trajet in particule:
+                if trajet.speed >= self.MAX_SPEED_ms:
+                    #print(f'La particule {indice} va trop vite !  {trajet.speed} m/s > {self.MAX_SPEED_ms} - {trajet.speed*self.frame_time/self.GSD_Calcul} pixels en une frame')
+                    indices_particules_high_speed.append(indice)
+                    # on break car une seule vitesse excessive suffit pour virer la particule
+                    nb_exces_de_vitesse+=1
+                    break
+        print(f'Avec max_speed = {self.MAX_SPEED_ms}m/s <=> {self.MAX_SPEED_ms*self.frame_time/self.GSD_Calcul}px/frame on retire {nb_exces_de_vitesse}/{len(points_suivis_bruts)} particules')
 
 
         # for distance in [2,2.5,3,3.5,4,4.5,5] :
@@ -548,11 +545,14 @@ class DzianiBullage:
                     all_X.append(trajet.x)
                     all_Y.append(trajet.y)
                     speeds_m_per_sec.append(trajet.speed)
-                    print(f'Ajout {trajet.x}, {trajet.y}, {trajet.speed}')
+                    #print(f'Ajout {trajet.x}, {trajet.y}, {trajet.speed}')
 
                     if indice not in speed_m_per_sec_par_trajet:
-                        speed_m_per_sec_par_trajet[i] = []
-                    speed_m_per_sec_par_trajet[i].append(trajet.speed)
+                        speed_m_per_sec_par_trajet[indice] = []
+                    speed_m_per_sec_par_trajet[indice].append(trajet.speed)
+
+
+
 
                     if trajet.debut_echantillonnage == 0 :
                         #print(f'trajet {indice} {int(x)},{int(y)},{speed}')
@@ -561,12 +561,16 @@ class DzianiBullage:
                     #cv2.circle(frame, (int(x_newPoint), int(y_newPoint)), rayon_cercle_largeur_ligne, color, -1)
 
         # on sauve l'image des tajets pour la premiere fenetre (début_echantillonnage = 0)
-        if self.SAVE_PLOTS or self.DISPLAY_PLOTS:
+        if debut_echantillonnage == 0 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
             self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
 
 
-        #print(f'Fin traitement video for offset {debut_echantillonnage:03}')
+        print(f'Fin traitement video for offset {debut_echantillonnage:03}')
+        print(f'{len(all_X)=}\t{len(all_Y)=}\t{len(speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
 
+        if DEBUG :
+            print('###### DEBUG ICI ###########')
+            __import__("IPython").embed()
 
         #Vitesses au cours du temps
         vitesses_moyennes = {}
@@ -803,7 +807,7 @@ class DzianiBullage:
             # Ajouter des étiquettes et un titre
             ax.set_xlabel('X Position')
             ax.set_ylabel('Y Position')
-            ax.set_title('Scatter Plot of sampled_positions with Speed Colormap \n{self.date_video}_{self.input_video_filename}')
+            ax.set_title(f'Scatter Plot of sampled_positions with Speed Colormap \n{self.date_video}_{self.input_video_filename}')
             # Ajuster les limites des axes si nécessaire
             ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
             ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
@@ -1198,6 +1202,10 @@ class DzianiBullage:
         print(f'{self.tag_file}\tcentre zone de detetion {int(final_center[0])}, {int(final_center[1])}')
 
 
+    def save_figure(self,figure,filename):
+        filepath = self.output_path /  filename
+        figure.savefig(filepath, dpi=300)
+
 
     def calcul_largeur_panache(self):
         resolution = 200
@@ -1254,19 +1262,35 @@ class DzianiBullage:
             speeds_along_rays.append(ray_speeds)
 
         # Tracer les rayons
-        plt.figure(figsize=(9, 9))
-        plt.imshow(speeds, cmap='Spectral_r', origin='lower')
-        plt.colorbar(label="Vitesse (m/s)")
+        fig, ax = plt.subplots(figsize=(9, 9))
 
+        # Afficher l'image des vitesses
+        img = ax.imshow(speeds, cmap='Spectral_r', origin='lower')
+
+        # Ajouter une barre de couleur
+        cbar = fig.colorbar(img, ax=ax, label="Vitesse (m/s)")
+
+        # Tracer les rayons
         for ray_X, ray_Y in zip(coords_X, coords_Y):
-            plt.plot(ray_Y, ray_X, 'gray', alpha=0.9, linewidth = 0.7)  # Attention aux indices [X, Y]
+            ax.plot(ray_Y, ray_X, color='gray', alpha=0.9, linewidth=0.7)  # Attention aux coordonnées : Y en premier pour imshow
 
-        plt.scatter(self.center_interpolation[1], self.center_interpolation[0], color='red', label='Center', zorder=5)
+        # Placer le centre
+        ax.scatter(self.center_interpolation[1], self.center_interpolation[0], color='red', label='Center', zorder=5)
 
-        plt.xlabel('Y (indice)')
-        plt.ylabel('X (indice)')
-        plt.legend()
-        plt.show()
+        # Étiquettes et légende
+        ax.set_xlabel('Y (indice)')
+        ax.set_ylabel('X (indice)')
+        ax.set_title(f"Rayons\n{self.date_video} - {self.input_video_filename}")
+
+        ax.legend()
+
+        # Affichage
+        #plt.show()
+
+        # Sauvegarder l'image résultante
+        self.save_figure(fig,f'Rayons_{self.tag_file}.png')
+        plt.close(fig)
+
 
         center_x_m = grid_X_m[self.center_interpolation[0]]  # en mètres
         center_y_m = grid_Y_m[self.center_interpolation[1]]  # en mètres
@@ -1360,8 +1384,7 @@ class DzianiBullage:
 
         #plt.show()
         # Sauvegarder l'image résultante
-        filepath = self.output_path /  f'Graph_final_{self.tag_file}.png'
-        fig.savefig(filepath, dpi=300)
+        self.save_figure(fig,f'Graph_final_{self.tag_file}.png')
         plt.close(fig)
 
 
