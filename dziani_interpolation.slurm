@@ -13,6 +13,6 @@ python3 -V
 
 #On lance avec l'option $1 qui est le numéro de ligne à traiter et option potentiel -a pour
 # le 2eme parametre pour analyser le fichier
-
+date
 python3 DzianiBullage.py $1 $2
 date
