@@ -40,37 +40,47 @@ class trajet_struct(NamedTuple):
     speed: float
     debut_echantillonnage: int
 
-import subprocess
-import os
-import re
-import tempfile
+
 
 def analyser_video_srt(path_video):
-    # Créer un fichier temporaire pour les sous-titres extraits
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.srt') as tmp_srt:
-        path_srt = tmp_srt.name
 
-    try:
-        # Extraire les sous-titres (stream 0:s:0 est souvent le bon)
-        cmd = [
-            "ffmpeg",
-            "-y",  # overwrite without asking
-            "-i", path_video,
-            "-map", "0:s:0",
-            path_srt
-        ]
-        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    path_video = Path(path_video)
+    extension = path_video.suffix.lower()
 
-        # Lire le fichier SRT extrait
-        with open(path_srt, 'r', encoding='utf-8') as f:
-            contenu = f.read()
+    if extension == ".mov":
+        # Cas MOV : extraction SRT embarqué avec ffmpeg
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.srt') as tmp_srt:
+            path_srt = tmp_srt.name
+        try:
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-i", str(path_video),
+                "-map", "0:s:0",
+                path_srt
+            ]
+            subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError:
+            raise RuntimeError(f"Impossible d'extraire la piste de sous-titres de {path_video.name}")
 
-        # Extraire tous les blocs de texte
+    elif extension == ".mp4":
+        # Cas MP4 : on attend un fichier .SRT externe à côté
+        path_srt = path_video.with_suffix(".SRT")
+        if not path_srt.exists():
+            raise FileNotFoundError(f"Fichier SRT externe introuvable pour {path_video.name} : {path_srt}")
+
+    else:
+        raise ValueError(f"Extension non supportée : {extension}")
+
+    # Lecture du contenu SRT
+    with open(path_srt, "r", encoding="utf-8") as f:
+        contenu = f.read()
+
+    # === Traitement des SRT MOV ===
+    if extension == ".mov":
         blocs = re.findall(r'\d+\n\d{2}:\d{2}:\d{2},\d{3} --> .*?\n(.*?)\n', contenu)
-
         alti_rtk_home = None
         hauteurs = []
-
         for bloc in blocs:
             match_home = re.search(r'HOME\s*\(.*?,.*?,\s*(-?\d+\.?\d*)m?\)', bloc)
             if match_home and alti_rtk_home is None:
@@ -81,22 +91,31 @@ def analyser_video_srt(path_video):
                 hauteurs.append(float(match_hauteur.group(1)))
 
         if alti_rtk_home is None or not hauteurs:
-            print("Erreur : données manquantes.")
-            return None, None, None
+            raise ValueError("Informations manquantes dans le SRT MOV.")
 
         hauteur_moyenne = sum(hauteurs) / len(hauteurs)
         alti_rtk_calculee = alti_rtk_home + hauteur_moyenne
 
-        print(f"alti_rtk_home : {alti_rtk_home}")
-        print(f"hauteur_moyenne_drone : {hauteur_moyenne}")
-        print(f"alti_rtk_drone_calculée : {alti_rtk_calculee}")
+    # === Traitement des SRT MP4 ===
+    elif extension == ".mp4":
+        blocs = re.findall(r'\d+\n\d{2}:\d{2}:\d{2},\d{3} --> .*?\n(.*?)</font>', contenu, re.DOTALL)
+        abs_alts = []
+        for bloc in blocs:
+            match_abs = re.search(r'abs_alt:\s*(-?\d+\.?\d*)', bloc)
+            if match_abs:
+                abs_alts.append(float(match_abs.group(1)))
+        if not abs_alts:
+            raise ValueError("Aucune valeur 'abs_alt' trouvée dans le fichier SRT.")
 
-        return alti_rtk_home, hauteur_moyenne, alti_rtk_calculee
+        alti_rtk_home = 0
+        hauteur_moyenne = 0
+        alti_rtk_calculee = sum(abs_alts) / len(abs_alts)
 
-    finally:
-        if os.path.exists(path_srt):
-            os.remove(path_srt)  # Nettoyage du fichier temporaire
-
+    # Affichage ou retour
+    print(f"alti_rtk_home : {alti_rtk_home}")
+    print(f"hauteur_moyenne_drone : {hauteur_moyenne}")
+    print(f"alti_rtk_drone_calculée : {alti_rtk_calculee}")
+    return alti_rtk_home, hauteur_moyenne, alti_rtk_calculee
 
 
 @dataclass
