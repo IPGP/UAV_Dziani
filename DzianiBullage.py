@@ -3,6 +3,7 @@ import argparse
 import itertools
 from math import dist
 import os
+import re
 import sys
 import csv
 import socket
@@ -25,6 +26,9 @@ from utils import get_data_from_google_sheet
 from tslearn.barycenters import euclidean_barycenter
 import gc
 from typing import NamedTuple
+import subprocess
+import tempfile
+
 
 DEBUG = False
 #DEBUG = True
@@ -35,6 +39,65 @@ class trajet_struct(NamedTuple):
     y: float
     speed: float
     debut_echantillonnage: int
+
+import subprocess
+import os
+import re
+import tempfile
+
+def analyser_video_srt(path_video):
+    # Créer un fichier temporaire pour les sous-titres extraits
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.srt') as tmp_srt:
+        path_srt = tmp_srt.name
+
+    try:
+        # Extraire les sous-titres (stream 0:s:0 est souvent le bon)
+        cmd = [
+            "ffmpeg",
+            "-y",  # overwrite without asking
+            "-i", path_video,
+            "-map", "0:s:0",
+            path_srt
+        ]
+        subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        # Lire le fichier SRT extrait
+        with open(path_srt, 'r', encoding='utf-8') as f:
+            contenu = f.read()
+
+        # Extraire tous les blocs de texte
+        blocs = re.findall(r'\d+\n\d{2}:\d{2}:\d{2},\d{3} --> .*?\n(.*?)\n', contenu)
+
+        alti_rtk_home = None
+        hauteurs = []
+
+        for bloc in blocs:
+            match_home = re.search(r'HOME\s*\(.*?,.*?,\s*(-?\d+\.?\d*)m?\)', bloc)
+            if match_home and alti_rtk_home is None:
+                alti_rtk_home = float(match_home.group(1))
+
+            match_hauteur = re.search(r'H\s*(-?\d+\.?\d*)m', bloc)
+            if match_hauteur:
+                hauteurs.append(float(match_hauteur.group(1)))
+
+        if alti_rtk_home is None or not hauteurs:
+            print("Erreur : données manquantes.")
+            return None, None, None
+
+        hauteur_moyenne = sum(hauteurs) / len(hauteurs)
+        alti_rtk_calculee = alti_rtk_home + hauteur_moyenne
+
+        print(f"alti_rtk_home : {alti_rtk_home}")
+        print(f"hauteur_moyenne_drone : {hauteur_moyenne}")
+        print(f"alti_rtk_drone_calculée : {alti_rtk_calculee}")
+
+        return alti_rtk_home, hauteur_moyenne, alti_rtk_calculee
+
+    finally:
+        if os.path.exists(path_srt):
+            os.remove(path_srt)  # Nettoyage du fichier temporaire
+
+
 
 @dataclass
 class DzianiBullage:
@@ -58,14 +121,12 @@ class DzianiBullage:
     #GSD_Calcul : float = 0
 
     ## Analysis
-    #gsd_hauteur : float = 0
     GSD_Calcul : float = 0
     GSD_Calcul_H : float = 0
     GSD_Calcul_W : float = 0
 
 
     detection_radius : int = 0
-    #interpolation_diameter: int = 0
     detection_center : tuple  = None
     colormap =  plt.cm.rainbow
     input_video_filename : str = ""
@@ -121,18 +182,15 @@ class DzianiBullage:
         self.video_path = self.root_data_path / donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
         self.alti_abs_lac=donnees['ALTI_ABS_LAC']
-        #self.gsd_hauteur = float(donnees['GSD_HAUTEUR'])
         self.detection_radius = int(donnees['RAYON_DETECTION'])
-        #self.interpolation_diameter = int(donnees['DIAMETRE_INTERPOLATION'])
         self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
         self.center_interpolation = eval(donnees['CENTRE_INTERPOLATION'])
         self.alti_abs_lac = float(donnees['ALTI_ABS_LAC'])
         self.alti_abs_drone = float(donnees['ALTI_ABS_DRONE'])
         self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
         print(f'La distance drone <-> lac est de {self.distance_lac}')
-        # Sensor size is in mm
-        #self.sensor_data = eval(donnees['SENSOR_DATA'])
-        self.sensor_height, self.sensor_width, self.focal_distance = eval(donnees['SENSOR_DATA'])
+
+        self.sensor_height_mm, self.sensor_width_mm, self.focal_distance_mm = eval(donnees['SENSOR_DATA'])
 
         self.all_points = []
 
@@ -167,6 +225,9 @@ class DzianiBullage:
         if not os.path.exists(self.output_path):
             os.makedirs(self.output_path)
 
+        alti_rtk_home,hauteur_moyenne_drone,self.alti_abs_drone = analyser_video_srt(self.video_path)
+        self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
+        print(f'Avec les sous-titre, {self.alti_abs_drone=} et {self.distance_lac=}')
 
     def get_gsd(self):
 
@@ -175,9 +236,9 @@ class DzianiBullage:
         # GSDw = self.distance_lac*self.sensor_data[1] / (self.sensor_data[2] * self.frame_width)
         # hauteur de vol x hauteur de capteur / longueur focale x hauteur de l'image.
 
-        self.GSD_Calcul_H = self.distance_lac*self.sensor_height / (self.focal_distance * self.frame_height)
-        self.GSD_Calcul_W = self.distance_lac*self.sensor_width / (self.focal_distance * self.frame_width)
-        print(f'{self.sensor_height=}\t{self.sensor_width=}\t{self.frame_height=}\t{self.frame_width=}\t{self.GSD_Calcul_H=}\t{self.GSD_Calcul_W=}\t {min(self.GSD_Calcul_H,self.GSD_Calcul_W)=}')
+        self.GSD_Calcul_H = self.distance_lac*self.sensor_height_mm / (self.focal_distance_mm * self.frame_height)
+        self.GSD_Calcul_W = self.distance_lac*self.sensor_width_mm / (self.focal_distance_mm * self.frame_width)
+        print(f'{self.sensor_height_mm=}\t{self.sensor_width_mm=}\t{self.frame_height=}\t{self.frame_width=}\t{self.GSD_Calcul_H=}\t{self.GSD_Calcul_W=}\t {min(self.GSD_Calcul_H,self.GSD_Calcul_W)=}')
         self.GSD_Calcul = min(self.GSD_Calcul_H,self.GSD_Calcul_W)
 
         print("####################################################")
@@ -566,7 +627,16 @@ class DzianiBullage:
 
 
         print(f'Fin traitement video for offset {debut_echantillonnage:03}')
-        print(f'{len(all_X)=}\t{len(all_Y)=}\t{len(speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
+        print(f'{debut_echantillonnage} {len(all_X)=}\t{len(all_Y)=}\t{len(speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
+
+
+        if len(all_X) == 0  and len(all_Y) == 0  and len(speeds_m_per_sec) == 0  and len(speed_m_per_sec_par_trajet) == 0 :
+            print(f"la  fentre {debut_echantillonnage} ne contenait pas de particules ")
+            print(f'{debut_echantillonnage} {len(all_X)=}\t{len(all_Y)=}\t{len(speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
+
+            return []
+
+
 
         if DEBUG :
             print('###### DEBUG ICI ###########')
@@ -1267,6 +1337,8 @@ class DzianiBullage:
         # Afficher l'image des vitesses
         img = ax.imshow(speeds, cmap='Spectral_r', origin='lower')
 
+        self.save_figure(fig,f'find_center_{self.tag_file}.png')
+
         # Ajouter une barre de couleur
         cbar = fig.colorbar(img, ax=ax, label="Vitesse (m/s)")
 
@@ -1372,7 +1444,7 @@ class DzianiBullage:
         # Tracer la barre verticale et annoter la valeur maximale
         ax.axvline(x=max_distance, color='black', linestyle='--', label=f'Max à {max_distance:.2f} m')
         ax.scatter([max_distance], [max_speed], color='white', zorder=5)
-        ax.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m', color='black', fontsize=20)
+        ax.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m  - {max_speed:.2f}m/s', color='black', fontsize=20)
 
         # Ajouter des détails au graphique
         ax.set_title(f"Vitesse en fonction de la distance au centre\n{self.date_video} - {self.input_video_filename}")
@@ -1386,6 +1458,7 @@ class DzianiBullage:
         # Sauvegarder l'image résultante
         self.save_figure(fig,f'Graph_final_{self.tag_file}.png')
         plt.close(fig)
+        print(f'graph_final {self.tag_file}\t{max_distance:.2f}\t{max_speed:.2f}')
 
 
 def main():
