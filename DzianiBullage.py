@@ -156,6 +156,7 @@ class DzianiBullage:
     NB_BUBBLES : int = 3000
     MIN_DIST_m : float = 3
     MAX_SPEED_ms : float = 1
+    NB_RAYONS_PANACHE :int = 400
 
     # images DPI:
     DPI_SAVED_IMAGES : int = None
@@ -200,14 +201,16 @@ class DzianiBullage:
                 donnees = ligne
         self.video_path = self.root_data_path / donnees['VIDEO_PATH']
         self.date_video = donnees['DATE_VIDEO']
-        self.alti_abs_lac=donnees['ALTI_ABS_LAC']
+        self.alti_abs_lac=donnees['ALTI_ABS_LAC'].replace(",", ".")
         self.detection_radius = int(donnees['RAYON_DETECTION'])
         self.detection_center = eval(donnees['CENTRE_ZONE_DE_DETECTION'])
         self.center_interpolation = eval(donnees['CENTRE_INTERPOLATION'])
-        self.alti_abs_lac = float(donnees['ALTI_ABS_LAC'])
-        self.alti_abs_drone = float(donnees['ALTI_ABS_DRONE'])
-        self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
-        print(f'La distance drone <-> lac est de {self.distance_lac}')
+        self.alti_abs_lac = float(donnees['ALTI_ABS_LAC'].replace(",", "."))
+        #self.alti_abs_drone = float(donnees['ALTI_ABS_DRONE'])
+        self.rayon_max_panache = int(donnees['RAYON_MAX_PANACHE'])
+
+        #self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
+        #print(f'La distance drone <-> lac est de {self.distance_lac}')
 
         self.sensor_height_mm, self.sensor_width_mm, self.focal_distance_mm = eval(donnees['SENSOR_DATA'])
 
@@ -247,6 +250,7 @@ class DzianiBullage:
         alti_rtk_home,hauteur_moyenne_drone,self.alti_abs_drone = analyser_video_srt(self.video_path)
         self.distance_lac = self.alti_abs_drone - self.alti_abs_lac
         print(f'Avec les sous-titre, {self.alti_abs_drone=} et {self.distance_lac=}')
+        print(f'La distance drone <-> lac est de {self.distance_lac}')
 
     def get_gsd(self):
 
@@ -356,7 +360,7 @@ class DzianiBullage:
 
         ax.set_xlabel('Time (seconds)')
         ax.set_ylabel('Points suivis par l\'algorithme')
-        ax.set_title(f'Evolution des vitesses au cours du temps \nDate de la vidéo: {self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s')
+        ax.set_title(f'Evolution des vitesses au cours du temps \n{self.line_number} {self.date_video} {self.input_video_filename} {self.window_size_seconds}s {self.windows_shift_seconds}s')
 
         #ax.text(1.7, 1.02, f'Date de la vidéo: {self.date_video}', transform=ax.transAxes, horizontalalignment='right', fontsize=10, color='black')
 
@@ -393,6 +397,25 @@ class DzianiBullage:
             filename = f'Trajets_des_bulles_{self.tag_file}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
             cv2.imwrite(filepath, img)
+            self.save_lowres_image(f'Trajets_des_bulles_{self.tag_file}_{debut_echantillonnage:03}', img)
+
+
+    def save_lowres_image(self,filename, img):
+
+        # Création d'une version basse définition (ex : 25 % de la taille d'origine)
+        scale_percent = 25  # Ajuste selon tes besoins
+        width = int(img.shape[1] * scale_percent / 100)
+        height = int(img.shape[0] * scale_percent / 100)
+        dim = (width, height)
+
+        # Redimensionnement de l'image
+        lowres_img = cv2.resize(img, dim, interpolation=cv2.INTER_AREA)
+
+        # Chemin de l'image basse définition
+        lowres_filename = f'{filename}_lowres.png'
+        lowres_filepath = self.output_path / lowres_filename
+        cv2.imwrite(str(lowres_filepath), lowres_img)  # Image basse définition
+
 
 
     def get_video_data(self):
@@ -460,6 +483,8 @@ class DzianiBullage:
             filename = f'Cercle_detection_{self.tag_file}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
             cv2.imwrite(filepath, first_frame_copy)
+            self.save_lowres_image(f'Cercle_detection_{self.tag_file}_{debut_echantillonnage:03}', first_frame_copy)
+
 
         # Détermination des caractéristiques de détection
         first_frame_gray = self.frame_to_BGR2GRAY(first_frame)
@@ -469,7 +494,6 @@ class DzianiBullage:
         #Définition des résultats des calculs
         distances_totales = {}  # Distances totales parcourues par chaque point
         total_times = {}  # Temps total de suivi pour chaque point
-        #all_points = [] # Liste pour stocker toutes les positions X et Y des points
         all_X = [] # Liste pour stocker toutes les positions X des points
         all_Y = [] # Liste pour stocker toutes les positions Y des points
         speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
@@ -478,6 +502,7 @@ class DzianiBullage:
         indices_particules_high_speed = [] # Indices des points qui ont été trop vite
 
         points_suivis_bruts ={}
+        points_suivis_nets =[]
 
         status_update_seconds= 3
 
@@ -622,6 +647,7 @@ class DzianiBullage:
         for indice, particule in points_suivis_bruts.items():
             for trajet in particule:
                 if (indice not in indices_particules_immobiles) and (indice not in indices_particules_high_speed):
+                    points_suivis_nets.append(trajet)
                     all_X.append(trajet.x)
                     all_Y.append(trajet.y)
                     speeds_m_per_sec.append(trajet.speed)
@@ -724,7 +750,7 @@ class DzianiBullage:
             self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
 
         #return [all_points,speeds_m_per_sec]
-        return [all_X, all_Y, speeds_m_per_sec]
+        return [all_X, all_Y, speeds_m_per_sec,points_suivis_nets]
 
 
     def video_file_analysis(self):
@@ -754,9 +780,7 @@ class DzianiBullage:
         speeds_tmp = []
 
         for item in self.results_array:
-            Xs = item[0]
-            Ys = item[1]
-            values = item[2]
+            Xs ,Ys, values,  points_suivis_nets = item
 
             for X, Y, value in zip(Xs,Ys, values):
                 positions_X_tmp.append(X)
@@ -766,6 +790,8 @@ class DzianiBullage:
         self.np_X = np.array(positions_X_tmp)
         self.np_Y = np.array(positions_Y_tmp)
         self.np_speeds =np.array(speeds_tmp)
+
+
 
 
     def save_results_numpy(self):
@@ -896,7 +922,7 @@ class DzianiBullage:
             # Ajouter des étiquettes et un titre
             ax.set_xlabel('X Position')
             ax.set_ylabel('Y Position')
-            ax.set_title(f'Scatter Plot of sampled_positions with Speed Colormap \n{self.date_video}_{self.input_video_filename}')
+            ax.set_title(f'Scatter Plot of sampled_positions with Speed Colormap \n{self.line_number} - {self.date_video} -{self.input_video_filename}')
             # Ajuster les limites des axes si nécessaire
             ax.set_xlim([np.min(sampled_positions_X), np.max(sampled_positions_X)])
             ax.set_ylim([np.min(sampled_positions_Y), np.max(sampled_positions_Y)])
@@ -942,7 +968,7 @@ class DzianiBullage:
             cbar = plt.colorbar(contour, ax=ax, label='Speeds (m/s)')
             ax.set_xlabel('X Axis')
             ax.set_ylabel('Y Axis')
-            ax.set_title(f'Interpolated Grid with Smoothing Applied \n{self.date_video}_{self.input_video_filename}')
+            ax.set_title(f'Interpolated Grid with Smoothing Applied \n{self.line_number} - {self.date_video}_{self.input_video_filename}')
 
 
             # Sauvegarder l'image résultante
@@ -1291,24 +1317,20 @@ class DzianiBullage:
         print(f'{self.tag_file}\tcentre zone de detetion {int(final_center[0])}, {int(final_center[1])}')
 
 
-    def save_figure(self,figure,filename):
+    def save_figure(self,figure,filename, dpi=300):
         filepath = self.output_path /  filename
-        figure.savefig(filepath, dpi=300)
+        figure.savefig(filepath, dpi=dpi)
 
 
     def calcul_largeur_panache(self):
         resolution = 200
         # Dimensions
-        nb_rayons = 400
-        rayon_max = 100
+
+        # centre_interpX = resolution - (self.detection_center[0]) / (self.frame_width / resolution)
+        # centre_interpY = resolution - (self.detection_center[1]) / (self.frame_height / resolution)
 
 
-
-        centre_interpX = resolution - (self.detection_center[0]) / (self.frame_width / resolution)
-        centre_interpY = resolution - (self.detection_center[1]) / (self.frame_height / resolution)
-
-
-        print(f"{self.center_interpolation=} \t Avec calcul {centre_interpX=}, {centre_interpY=}")
+        # print(f"{self.center_interpolation=} \t Avec calcul {centre_interpX=}, {centre_interpY=}")
 
         speeds= np.load(self.results_smoothed_grid_speeds_filepath )
         grid_X = np.load(self.results_grid_X_filepath)
@@ -1321,7 +1343,7 @@ class DzianiBullage:
 
 
             # Générer les angles pour les rayons uniformément répartis
-        angles = np.linspace(0, 2 * np.pi, nb_rayons, endpoint=False)
+        angles = np.linspace(0, 2 * np.pi, self.NB_RAYONS_PANACHE, endpoint=False)
 
         # Initialisation des listes pour stocker les coordonnées et les vitesses
         coords_X = []
@@ -1335,7 +1357,7 @@ class DzianiBullage:
             ray_speeds = []
 
             # Calculer les points le long du rayon pour chaque distance entre 1 et rayon_max
-            for r in range(1, rayon_max + 1):
+            for r in range(1, self.rayon_max_panache + 1):
                 x = int(self.center_interpolation[0] + r * np.cos(angle))
                 y = int(self.center_interpolation[1] + r * np.sin(angle))
 
@@ -1350,13 +1372,42 @@ class DzianiBullage:
             coords_Y.append(ray_Y)
             speeds_along_rays.append(ray_speeds)
 
-        # Tracer les rayons
+
+        ########################################
+        ######### Pour trouver le centre #######
+        ########################################
+
+        # Dimensions en pixels
+        width_px, height_px = 200, 200
+        dpi = 100  # 200 px / 100 dpi = 2 inches
+
+        # Créer une figure de 2x2 pouces à 100 dpi = 200x200 pixels
+        fig = plt.figure(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
+
+        # Ajouter une zone sans axes
+        ax = fig.add_axes([0, 0, 1, 1])  # prend tout l'espace
+        ax.axis('off')  # désactive les axes
+
+        # Afficher l'image des vitesses
+        img = ax.imshow(speeds, cmap='Spectral_r', origin='upper')
+        # Placer le centre
+        ax.scatter(self.center_interpolation[1], self.center_interpolation[0], color='red', label='Center', zorder=5)
+        # Tracer une croix centrée
+
+        size = 5  # ajuste selon ton échelle
+
+       # ax.plot([x - size, x + size], [y, y], color='red', linewidth=1.5, zorder=5)  # ligne horizontale
+       # ax.plot([x, x], [y - size, y + size], color='red', linewidth=1.5, zorder=5)  # ligne verticale
+
+        fig.savefig(self.output_path /  f'find_center_{self.tag_file}.png', dpi=dpi, bbox_inches='tight', pad_inches=0)
+
+
         fig, ax = plt.subplots(figsize=(9, 9))
 
         # Afficher l'image des vitesses
         img = ax.imshow(speeds, cmap='Spectral_r', origin='lower')
 
-        self.save_figure(fig,f'find_center_{self.tag_file}.png')
+
 
         # Ajouter une barre de couleur
         cbar = fig.colorbar(img, ax=ax, label="Vitesse (m/s)")
@@ -1371,8 +1422,7 @@ class DzianiBullage:
         # Étiquettes et légende
         ax.set_xlabel('Y (indice)')
         ax.set_ylabel('X (indice)')
-        ax.set_title(f"Rayons\n{self.date_video} - {self.input_video_filename}")
-
+        ax.set_title(f"Rayons\n{self.line_number} - {self.date_video} - {self.input_video_filename}")
         ax.legend()
 
         # Affichage
@@ -1387,7 +1437,7 @@ class DzianiBullage:
         center_y_m = grid_Y_m[self.center_interpolation[1]]  # en mètres
 
         # Générer les angles pour les rayons uniformément répartis
-        angles = np.linspace(0, 2 * np.pi, nb_rayons, endpoint=False)
+        angles = np.linspace(0, 2 * np.pi, self.NB_RAYONS_PANACHE, endpoint=False)
 
         # Initialisation des listes pour stocker les distances et les vitesses le long des rayons
         distances_along_rays = []
@@ -1399,7 +1449,7 @@ class DzianiBullage:
             ray_speeds = []
 
             # Calculer les points le long du rayon pour chaque distance entre 1 et rayon_max (en unités d'indices)
-            for r in range(1, rayon_max + 1):
+            for r in range(1, self.rayon_max_panache + 1):
                 x_index = int(self.center_interpolation[0] + r * np.cos(angle))
                 y_index = int(self.center_interpolation[1] + r * np.sin(angle))
 
@@ -1463,10 +1513,13 @@ class DzianiBullage:
         # Tracer la barre verticale et annoter la valeur maximale
         ax.axvline(x=max_distance, color='black', linestyle='--', label=f'Max à {max_distance:.2f} m')
         ax.scatter([max_distance], [max_speed], color='white', zorder=5)
-        ax.text(max_distance, max_speed, f'Rayon = {max_distance:.2f} m  - {max_speed:.2f}m/s', color='black', fontsize=20)
+        t=ax.text(max_distance, max_speed+0.05, f'Rayon = {max_distance:.2f} m  - {max_speed:.2f}m/s', color='black',
+                fontsize=20, horizontalalignment='center',)
+        t.set_bbox(dict(facecolor='white', alpha=1, edgecolor='red'))
+
 
         # Ajouter des détails au graphique
-        ax.set_title(f"Vitesse en fonction de la distance au centre\n{self.date_video} - {self.input_video_filename}")
+        ax.set_title(f"Vitesse en fonction de la distance au centre\n{self.line_number} - {self.date_video} - {self.input_video_filename}")
         ax.set_xlabel("Distance au centre (m)")
         ax.set_ylabel("Vitesse (m/s)")
         ax.set_ylim(0,0.5)

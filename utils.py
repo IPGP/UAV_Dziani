@@ -20,7 +20,8 @@ def get_data_from_google_sheet(google_sheet_id):
     colonnes_requises = ['VIDEO_PATH','NUMERO','commentaires','VITESSE_MAX_CLASSES_VITESSES',
                                 'DATE_VIDEO', 'DATE_AFFICHAGE',
                                 'ALTI_ABS_LAC','ALTI_ABS_DRONE','SENSOR_DATA', 'RAYON_DETECTION',
-                                'CENTRE_ZONE_DE_DETECTION','CENTRE_INTERPOLATION','MAX_DISTANCE','MAX_SPEED',]
+                                'CENTRE_ZONE_DE_DETECTION','CENTRE_INTERPOLATION','RAYON_MAX_PANACHE',
+                                'MAX_DISTANCE','MAX_SPEED',]
     # Vérification des colonnes
     for column in colonnes_requises:
         if column not in CSV_DATA.fieldnames:
