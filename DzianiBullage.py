@@ -494,15 +494,14 @@ class DzianiBullage:
         #Définition des résultats des calculs
         distances_totales = {}  # Distances totales parcourues par chaque point
         total_times = {}  # Temps total de suivi pour chaque point
-        all_X = [] # Liste pour stocker toutes les positions X des points
-        all_Y = [] # Liste pour stocker toutes les positions Y des points
-        speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
         speed_m_per_sec_par_trajet = {} # Dictionnaire où chaque trajet correspond à une liste qui contient les vitesses prises par chaque point du trajet en m/s
         indices_particules_immobiles = [] # Indices des points qui n'ont pas beaucoup bougé pendant la fenetre
         indices_particules_high_speed = [] # Indices des points qui ont été trop vite
+        all_X = [] # Liste pour stocker toutes les positions X des points
+        all_Y = [] # Liste pour stocker toutes les positions Y des points
+        all_speeds_m_per_sec = [] # Liste pour stocker les vitesses en m/s pour chaque point
 
         points_suivis_bruts ={}
-        points_suivis_nets =[]
 
         status_update_seconds= 3
 
@@ -647,10 +646,11 @@ class DzianiBullage:
         for indice, particule in points_suivis_bruts.items():
             for trajet in particule:
                 if (indice not in indices_particules_immobiles) and (indice not in indices_particules_high_speed):
-                    points_suivis_nets.append(trajet)
+
                     all_X.append(trajet.x)
                     all_Y.append(trajet.y)
-                    speeds_m_per_sec.append(trajet.speed)
+                    all_speeds_m_per_sec.append(trajet.speed)
+
                     #print(f'Ajout {trajet.x}, {trajet.y}, {trajet.speed}')
 
                     if indice not in speed_m_per_sec_par_trajet:
@@ -672,20 +672,18 @@ class DzianiBullage:
 
 
         print(f'Fin traitement video for offset {debut_echantillonnage:03}')
-        print(f'{debut_echantillonnage} {len(all_X)=}\t{len(all_Y)=}\t{len(speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
+        print(f'{debut_echantillonnage} {len(all_X)=}\t{len(all_Y)=}\t{len(all_speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
 
 
-        if len(all_X) == 0  and len(all_Y) == 0  and len(speeds_m_per_sec) == 0  and len(speed_m_per_sec_par_trajet) == 0 :
+        if len(all_X) == 0  and len(all_Y) == 0  and len(all_speeds_m_per_sec) == 0  and len(speed_m_per_sec_par_trajet) == 0 :
             print(f"la  fentre {debut_echantillonnage} ne contenait pas de particules ")
-            print(f'{debut_echantillonnage} {len(all_X)=}\t{len(all_Y)=}\t{len(speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
+            print(f'{debut_echantillonnage} {len(all_X)=}\t{len(all_Y)=}\t{len(all_speeds_m_per_sec)=}\t{len(speed_m_per_sec_par_trajet)=}')
 
             return []
 
 
 
-        if DEBUG :
-            print('###### DEBUG ICI ###########')
-            __import__("IPython").embed()
+
 
         #Vitesses au cours du temps
         vitesses_moyennes = {}
@@ -741,8 +739,6 @@ class DzianiBullage:
         # Convertir l'axe des temps en secondes (supposons 1 mesure par seconde ici)
         time_steps = np.linspace(0, self.window_size_seconds, frames_per_window)
 
-
-
         # Graph plot VS speed
         #print(f"{debut_echantillonnage:03} tracer_vitesse_vs_temps @@")
         #print(f"{debut_echantillonnage:03} Shapes {sorted_bubble_ids} {speed_matrix} {time_steps}")
@@ -750,7 +746,7 @@ class DzianiBullage:
             self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
 
         #return [all_points,speeds_m_per_sec]
-        return [all_X, all_Y, speeds_m_per_sec,points_suivis_nets]
+        return [all_X,all_Y,all_speeds_m_per_sec]
 
 
     def video_file_analysis(self):
@@ -774,23 +770,19 @@ class DzianiBullage:
             self.convert_result_to_np()
 
     def convert_result_to_np(self):
-        #taille_data_results = sum(len(item[0]) for item in self.results_array)
-        positions_X_tmp = []
-        positions_Y_tmp = []
-        speeds_tmp = []
+
+        #print('###### DEBUG ICI ###########')
+#        __import__("IPython").embed()
+
+        self.np_X = np.array([])
+        self.np_Y = np.array([])
+        self.np_speeds =np.array([])
 
         for item in self.results_array:
-            Xs ,Ys, values,  points_suivis_nets = item
 
-            for X, Y, value in zip(Xs,Ys, values):
-                positions_X_tmp.append(X)
-                positions_Y_tmp.append(Y)
-                speeds_tmp.append(value)
-
-        self.np_X = np.array(positions_X_tmp)
-        self.np_Y = np.array(positions_Y_tmp)
-        self.np_speeds =np.array(speeds_tmp)
-
+            self.np_X = np.append(self.np_X,item[0])
+            self.np_Y = np.append(self.np_Y,item[1])
+            self.np_speeds = np.append(self.np_speeds,item[2])
 
 
 
@@ -1605,8 +1597,8 @@ def main():
     root_data_path = Path(root_data_path)
     output_path = Path(output_path)
 
-    if DEBUG:
-        cpu_nb=1
+    # if DEBUG:
+    #     cpu_nb=1
 
     dziani_bullage = DzianiBullage(google_sheet_id=google_sheet_id,line_number=numero_ligne_a_traiter,output_path=output_path,
                                     root_data_path=root_data_path,window_size_seconds=duree_fenetre_analyse_seconde,
@@ -1620,12 +1612,14 @@ def main():
 
     if args.find_center :
         with Timer(text="{name}: {:.4f} seconds", name="=> calcul centre panache"):
-                dziani_bullage.calcul_centre_panache()
+            print(datetime.datetime.now())
+            dziani_bullage.calcul_centre_panache()
+            print(datetime.datetime.now())
         sys.exit()
 
     if args.file_analysis :
-
         with Timer(text="{name}: {:.4f} seconds", name="=> video_file_analysis"):
+            print(datetime.datetime.now())
             dziani_bullage.video_file_analysis()
 
         #with Timer(text="{name}: {:.4f} seconds", name="=> save_results_cPickle"):
@@ -1633,6 +1627,7 @@ def main():
 
         with Timer(text="{name}: {:.4f} seconds", name="=> save_results_numpy"):
             dziani_bullage.save_results_numpy()
+            print(datetime.datetime.now())
         sys.exit()
 
 
@@ -1667,7 +1662,10 @@ def main():
     if args.largeur_panache:
 
         with Timer(text="{name}: {:.4f} seconds", name="=> calcul largeur panache"):
+            print(datetime.datetime.now())
             dziani_bullage.calcul_largeur_panache()
+            print(datetime.datetime.now())
+
         sys.exit()
 
 
