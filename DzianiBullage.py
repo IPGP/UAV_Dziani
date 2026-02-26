@@ -32,6 +32,7 @@ import tempfile
 
 DEBUG = False
 #DEBUG = True
+TEMPS_GRAPHIQUES_PREMIERE_FENETRE = 0
 
 
 class trajet_struct(NamedTuple):
@@ -478,7 +479,7 @@ class DzianiBullage:
         cv2.circle(masque_detection, self.detection_center, self.detection_radius, 255, thickness=-1)
 
         # #Image avec la position du cercle de détection
-        if debut_echantillonnage == 0 :
+        if debut_echantillonnage == TEMPS_GRAPHIQUES_PREMIERE_FENETRE :
             cv2.circle(first_frame_copy, self.detection_center, self.detection_radius, 255, thickness= 2)
             filename = f'Cercle_detection_{self.tag_file}_{debut_echantillonnage:03}.png'
             filepath = self.output_path /  filename
@@ -660,14 +661,14 @@ class DzianiBullage:
 
 
 
-                    if trajet.debut_echantillonnage == 0 :
+                    if trajet.debut_echantillonnage == TEMPS_GRAPHIQUES_PREMIERE_FENETRE :
                         #print(f'trajet {indice} {int(x)},{int(y)},{speed}')
                         color = self.speed_to_color(trajet.speed)
                         cv2.circle(masque_suivi, (int(trajet.x), int(trajet.y)), rayon_cercle_largeur_ligne, color, -1)
                     #cv2.circle(frame, (int(x_newPoint), int(y_newPoint)), rayon_cercle_largeur_ligne, color, -1)
 
         # on sauve l'image des tajets pour la premiere fenetre (début_echantillonnage = 0)
-        if debut_echantillonnage == 0 and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
+        if debut_echantillonnage == TEMPS_GRAPHIQUES_PREMIERE_FENETRE and (self.SAVE_PLOTS or self.DISPLAY_PLOTS):
             self.save_trajet(masque_suivi, frame,points_encore_suivis,frame_count,debut_echantillonnage)
 
 
@@ -742,7 +743,7 @@ class DzianiBullage:
         # Graph plot VS speed
         #print(f"{debut_echantillonnage:03} tracer_vitesse_vs_temps @@")
         #print(f"{debut_echantillonnage:03} Shapes {sorted_bubble_ids} {speed_matrix} {time_steps}")
-        if debut_echantillonnage == 0 :
+        if debut_echantillonnage == TEMPS_GRAPHIQUES_PREMIERE_FENETRE :
             self.tracer_vitesse_vs_temps(sorted_bubble_ids,speed_matrix,time_steps,debut_echantillonnage)
 
         #return [all_points,speeds_m_per_sec]

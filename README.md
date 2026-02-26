@@ -13,7 +13,12 @@ pip install -r requirements.txt
 
 
 ## Windows
-#### Créer environnement sous anaconda :
+### installer FFMPEG
+Installez ffmpeg sur Windows :
+Téléchargez la version Windows sur https://ffmpeg.org/download.html
+Extrayez le contenu de l'archive téléchargée et ajoutez le chemin du dossier "bin" de ffmpeg à la variable d'environnement PATH de Windows.
+
+### Créer environnement sous anaconda :
 conda create -n env python=3.12
 
 conda activate env
