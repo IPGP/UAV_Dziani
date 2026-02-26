@@ -127,7 +127,7 @@ class DzianiBullage:
     line_number : int = 0
 
     #Video
-    video_path : str = ""
+    video_path : Path = Path("")
     date_video : str = ""
     frames_per_second : int = 0
     total_frames : int = 0
@@ -421,7 +421,7 @@ class DzianiBullage:
     def get_video_data(self):
 
         # Ouvrir la vidéo
-        video_file = cv2.VideoCapture(self.video_path)
+        video_file = cv2.VideoCapture(Path(self.video_path))
         if not video_file.isOpened():
             print(f"Erreur: impossible d'ouvrir la vidéo {self.video_path}")
             sys.exit()
