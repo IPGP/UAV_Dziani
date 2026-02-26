@@ -2,11 +2,13 @@
 ## Linux et Mac
 
 ### Environnement virtuel
-python3 -m venv .venv #
+python3.12 -m venv .venv
 
-source .venv/bin/activate
 
 ### activation
+source .venv/bin/activate
+
+### Installer les librairies dans l’environnement :
 pip install -r requirements.txt
 
 
@@ -49,7 +51,7 @@ ex: python3 DzianiBullage.py 4 -c
 ### Calculs principaux
 * Analyse des videos
 python3 DzianiBullage.py N -a
-ex: python3 DzianiBullage.py 4 -a
+ex: python3 DzianiBullage.py 10 -a
 
 * Calcul des interpolations
 python3 DzianiBullage.py N -i
