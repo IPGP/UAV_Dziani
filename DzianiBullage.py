@@ -752,7 +752,7 @@ class DzianiBullage:
 
     def video_file_analysis(self):
         print("Working on the video file ")
-        array_arguments_for_calculer_vitesse_bulles =  list(range(0, self.movie_length_seconds - self.window_size_seconds, self.windows_shift_seconds))
+        array_arguments_for_calculer_vitesse_bulles =  list(range(TEMPS_GRAPHIQUES_PREMIERE_FENETRE, self.movie_length_seconds - self.window_size_seconds, self.windows_shift_seconds))
 
         if DEBUG :
             self.calculer_vitesse_bulles( array_arguments_for_calculer_vitesse_bulles[0])
