@@ -13,6 +13,19 @@ pip install -r requirements.txt
 
 
 ## Windows
+### Option 1 : avec uv (recommandé)
+```powershell
+# Installer uv si nécessaire
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Créer l'environnement et installer les dépendances
+uv sync
+
+# Activer l'environnement
+.venv\Scripts\activate
+```
+
+### Option 2 : avec conda
 ### installer FFMPEG
 Installez ffmpeg sur Windows :
 Téléchargez la version Windows sur https://ffmpeg.org/download.html
@@ -46,29 +59,44 @@ OUTPUT_PATH=./
 # Utilisation
 N est le numéro de la ligne dans la feuille Google Sheets contenant les paramètres de traitement pour une expérience donnée.
 
-## Bash
+## Avec uv (recommandé)
 ### Calcul du centre de detection
-python3 DzianiBullage.py N -c
-
-ex: python3 DzianiBullage.py 4 -c
-
+```bash
+uv run DzianiBullage.py N -c
+# Exemple:
+uv run DzianiBullage.py 4 -c
+```
 
 ### Calculs principaux
-* Analyse des videos
-python3 DzianiBullage.py N -a
-ex: python3 DzianiBullage.py 10 -a
+* Analyse des vidéos
+```bash
+uv run DzianiBullage.py N -a
+# Exemple:
+uv run DzianiBullage.py 10 -a
+```
 
 * Calcul des interpolations
-python3 DzianiBullage.py N -i
-ex: python3 DzianiBullage.py 4 -i
-
-* Calcul des interpolations
-python3 DzianiBullage.py N -i
-ex: python3 DzianiBullage.py 4 -i
+```bash
+uv run DzianiBullage.py N -i
+# Exemple:
+uv run DzianiBullage.py 4 -i
+```
 
 * Calcul Largeur Panache
+```bash
+uv run DzianiBullage.py N -l
+# Exemple:
+uv run DzianiBullage.py 4 -l
+```
+
+## Avec Python (alternative)
+Si vous utilisez l'environnement virtuel traditionnel :
+```bash
+python3 DzianiBullage.py N -c
+python3 DzianiBullage.py N -a
+python3 DzianiBullage.py N -i
 python3 DzianiBullage.py N -l
-ex: python3 DzianiBullage.py 4 -l
+```
 
 
 
