@@ -782,7 +782,7 @@ requires-dist = [
     { name = "pyparsing", specifier = "==3.1.2" },
     { name = "python-dateutil", specifier = "==2.9.0.post0" },
     { name = "python-dotenv", specifier = "==1.0.1" },
-    { name = "requests", specifier = "==2.32.4" },
+    { name = "requests", specifier = "<=2.33.0" },
     { name = "scipy", specifier = "==1.13.1" },
     { name = "six", specifier = "==1.16.0" },
     { name = "tqdm", specifier = "==4.67.1" },
